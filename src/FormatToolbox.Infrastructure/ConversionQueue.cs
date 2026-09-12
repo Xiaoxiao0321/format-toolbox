@@ -60,7 +60,7 @@ public sealed class ConversionQueue
         try
         {
             provider = _registry.Resolve(item.Request);
-            if (provider is null) { Finish(item, ConversionResult.Failure(ErrorCodes.UnsupportedFormat, "没有可用的转换引擎。", TimeSpan.Zero, "router")); return; }
+            if (provider is null) { Finish(item, ConversionResult.Failure(ErrorCodes.UnsupportedFormat, _registry.DescribeUnsupportedConversion(item.Request), TimeSpan.Zero, "router")); return; }
             gate = provider.Id.StartsWith("office") ? _officeGate : provider.Id.StartsWith("autocad") ? _cadGate : _localGate;
             item.Status = ConversionStatus.Checking; Notify(item);
             await gate.WaitAsync(token);

@@ -20,6 +20,11 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private readonly HashSet<Guid> _recordedTasks = [];
     private string _selectedTarget = "pdf", _outputDirectory = "", _statusText = "就绪";
     private string _quickGuideText = "选择上方功能即可切换到对应设置；也可以直接拖入文件，再从“目标格式”中选择输出。";
+    private string _errorText = "";
+    public string ErrorText { get => _errorText; private set { _errorText = value; OnChanged(); OnChanged(nameof(ErrorVisibility)); } }
+    public Visibility ErrorVisibility => string.IsNullOrEmpty(ErrorText) ? Visibility.Collapsed : Visibility.Visible;
+    private void ShowError(string message) { ErrorText = message; StatusText = message; }
+    private void DismissError_Click(object sender, RoutedEventArgs e) => ErrorText = "";
     private string _imageQuality = "90", _renderDpi = "144", _pdfPageRange = "", _pdfWatermark = "", _ocrPageRange = "", _ocrDpi = "300", _compressionDpi = "144", _compressionQuality = "75", _mergeFileName = "";
     private string _selectedRotation = "0°", _selectedOcrLanguage = "中英混合";
     private bool _compressPdf = true, _rasterCompressPdf;
@@ -121,15 +126,18 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     }
     private void Start_Click(object sender, RoutedEventArgs e)
     {
-        if (InputFiles.Count == 0) { StatusText = "请先添加文件。"; return; }
+        ErrorText = "";
+        if (InputFiles.Count == 0) { ShowError("请先添加文件。可点击“添加文件”或将文件拖入窗口。"); return; }
         if (!ConfirmRasterCompression()) return;
         foreach (var file in InputFiles) if (!Enqueue(file.FullName, SelectedTarget)) break;
     }
     private bool Enqueue(string path, string target, PdfOptions? mergeOptions = null)
     {
-        if (!TryBuildOptions(path, target, out var options, out var error)) { StatusText = error; return false; }
+        if (!TryBuildOptions(path, target, out var options, out var error)) { ShowError(error); return false; }
         var ocr = target.StartsWith("可搜索", StringComparison.Ordinal);
-        var item = _queue.Enqueue(new(path, ocr ? "pdf" : target, string.IsNullOrWhiteSpace(OutputDirectory) ? null : OutputDirectory, Options: mergeOptions ?? options, OutputFileName: mergeOptions is null ? null : EmptyToNull(MergeFileName)));
+        var request = new ConversionRequest(path, ocr ? "pdf" : target, string.IsNullOrWhiteSpace(OutputDirectory) ? null : OutputDirectory, Options: mergeOptions ?? options, OutputFileName: mergeOptions is null ? null : EmptyToNull(MergeFileName));
+        if (_registry.Resolve(request) is null) { ShowError($"{Path.GetFileName(path)}：{_registry.DescribeUnsupportedConversion(request)}"); return false; }
+        var item = _queue.Enqueue(request);
         QueueItems.Add(new(item)); StatusText = "任务已加入队列。"; return true;
     }
     private void MergePdf_Click(object sender, RoutedEventArgs e)
@@ -195,6 +203,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         var row = QueueItems.FirstOrDefault(x => x.Item.Id == item.Id); row?.Refresh();
         if (item.Result is not null && _recordedTasks.Add(item.Id))
         {
+            if (item.Status == ConversionStatus.Failed) ShowError($"{Path.GetFileName(item.Request.InputPath)}：{item.Result.ErrorMessage} 详情可在“任务队列”中查看。");
             var entry = new HistoryEntry(DateTimeOffset.Now, item.Request.InputPath, item.Request.TargetFormat, item.Status, item.Result.ErrorMessage, item.Result.OutputFiles);
             await _history.AppendAsync(entry); HistoryItems.Insert(0, new(entry));
         }

@@ -24,6 +24,31 @@ public sealed class CoreTests : IDisposable
     }
 
     [Fact]
+    public async Task Docx_to_png_reports_two_step_instructions()
+    {
+        var registry = new ConversionRegistry([new FakeProvider(), new PdfRenderProvider()]);
+        var queue = new ConversionQueue(registry);
+        var item = queue.Enqueue(new("示例.DOCX", "png"));
+        await queue.WaitForIdleAsync();
+        Assert.Equal(ErrorCodes.UnsupportedFormat, item.Result!.ErrorCode);
+        Assert.Contains("DOCX 直接转为 PNG", item.Message);
+        Assert.Contains("转 PDF", item.Message);
+        Assert.Contains("PDF 导出图片", item.Message);
+        Assert.Contains("Microsoft Office 或 WPS", item.Message);
+        Assert.NotNull(registry.Resolve(new ConversionRequest("示例.pdf", "png")));
+    }
+
+    [Fact]
+    public void Unsupported_conversion_only_suggests_existing_routes()
+    {
+        var registry = new ConversionRegistry([new FakeProvider()]);
+        var message = registry.DescribeUnsupportedConversion(new("示例.docx", "png"));
+        Assert.Contains("目标格式改为：PDF", message);
+        Assert.DoesNotContain("PDF 导出图片", message);
+        Assert.Contains("检查文件扩展名", registry.DescribeUnsupportedConversion(new("示例.xyz", "png")));
+    }
+
+    [Fact]
     public void Output_defaults_to_result_folder_and_never_overwrites()
     {
         var input = Path.Combine(_directory, "测试.docx"); File.WriteAllText(input, "x");

@@ -2,6 +2,9 @@
   <DockPanel Margin="10">
     <Menu DockPanel.Dock="Top"><MenuItem Header="文件"><MenuItem Header="添加文件" Click="AddFiles_Click"/><MenuItem Header="清空列表" Click="Clear_Click"/><Separator/><MenuItem Header="退出" Click="Exit_Click"/></MenuItem><MenuItem Header="PDF 工具"><MenuItem Header="页面整理与拆分…" Click="OpenPdfTools_Click"/></MenuItem><MenuItem Header="工具"><MenuItem Header="检测转换引擎" Click="Detect_Click"/><MenuItem Header="打开输出目录" Click="OpenOutput_Click"/><MenuItem Header="打开诊断日志目录" Click="OpenLogs_Click"/></MenuItem><MenuItem Header="帮助"><MenuItem Header="意见反馈与客服…" Click="Feedback_Click"/><Separator/><MenuItem Header="关于与第三方许可证…" Click="About_Click"/></MenuItem></Menu>
     <StatusBar DockPanel.Dock="Bottom"><TextBlock Text="{Binding StatusText}"/><Separator/><TextBlock Text="全部转换均在本机完成"/></StatusBar>
+    <Border DockPanel.Dock="Top" Visibility="{Binding ErrorVisibility}" Background="#FFF4E5" BorderBrush="#B45309" BorderThickness="1" Padding="10" Margin="0,8,0,0">
+      <DockPanel><Button DockPanel.Dock="Right" Content="关闭提示" Click="DismissError_Click" Margin="10,0,0,0"/><TextBlock Text="{Binding ErrorText}" Foreground="#7C2D12" TextWrapping="Wrap" VerticalAlignment="Center"/></DockPanel>
+    </Border>
     <Grid Margin="0,8,0,0">
       <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/><RowDefinition Height="2*"/></Grid.RowDefinitions>
       <Expander Header="快速开始：1 选择功能  →  2 添加或拖入文件  →  3 调整设置  →  4 开始转换" Grid.Row="0" IsExpanded="True" BorderBrush="#C8D6E5" BorderThickness="1" Padding="7">
