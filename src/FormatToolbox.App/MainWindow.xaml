@@ -1,0 +1,70 @@
+<Window x:Class="FormatToolbox.App.MainWindow" xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" Title="格式转换工具箱" Width="1180" Height="860" MinWidth="940" MinHeight="700" AllowDrop="True" Drop="OnDrop" Closing="OnClosing">
+  <DockPanel Margin="10">
+    <Menu DockPanel.Dock="Top"><MenuItem Header="文件"><MenuItem Header="添加文件" Click="AddFiles_Click"/><MenuItem Header="清空列表" Click="Clear_Click"/><Separator/><MenuItem Header="退出" Click="Exit_Click"/></MenuItem><MenuItem Header="PDF 工具"><MenuItem Header="页面整理与拆分…" Click="OpenPdfTools_Click"/></MenuItem><MenuItem Header="工具"><MenuItem Header="检测转换引擎" Click="Detect_Click"/><MenuItem Header="打开输出目录" Click="OpenOutput_Click"/><MenuItem Header="打开诊断日志目录" Click="OpenLogs_Click"/></MenuItem><MenuItem Header="帮助"><MenuItem Header="意见反馈与客服…" Click="Feedback_Click"/><Separator/><MenuItem Header="关于与第三方许可证…" Click="About_Click"/></MenuItem></Menu>
+    <StatusBar DockPanel.Dock="Bottom"><TextBlock Text="{Binding StatusText}"/><Separator/><TextBlock Text="全部转换均在本机完成"/></StatusBar>
+    <Grid Margin="0,8,0,0">
+      <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/><RowDefinition Height="2*"/></Grid.RowDefinitions>
+      <Expander Header="快速开始：1 选择功能  →  2 添加或拖入文件  →  3 调整设置  →  4 开始转换" Grid.Row="0" IsExpanded="True" BorderBrush="#C8D6E5" BorderThickness="1" Padding="7">
+        <StackPanel>
+          <WrapPanel>
+            <Button Tag="office-pdf" Click="QuickAction_Click" Width="145" ToolTip="DOC/DOCX/RTF、XLS/XLSX/CSV、PPT/PPTX 转 PDF">文档 / 表格 / 演示&#x0a;转 PDF</Button>
+            <Button Tag="image" Click="QuickAction_Click" Width="145" ToolTip="PNG、JPEG、BMP、TIFF 相互转换；WebP 可作为输入">图片格式转换</Button>
+            <Button Tag="pdf-image" Click="QuickAction_Click" Width="145" ToolTip="把 PDF 指定页面导出为 PNG 或 JPEG">PDF 导出图片</Button>
+            <Button Tag="ocr" Click="QuickAction_Click" Width="145" ToolTip="对 PDF 或图片执行中英文离线 OCR，生成可搜索 PDF">离线 OCR</Button>
+            <Button Tag="merge" Click="QuickAction_Click" Width="145" ToolTip="按输入列表顺序合并 PDF 和图片">合并为 PDF</Button>
+            <Button Tag="pdf-tools" Click="QuickAction_Click" Width="145" ToolTip="预览、删除、重排或拆分 PDF 页面">PDF 页面整理 / 拆分</Button>
+            <Button Tag="dwg" Click="QuickAction_Click" Width="145" ToolTip="需要安装完整版 AutoCAD；输出所有可打印布局">DWG 转 PDF</Button>
+          </WrapPanel>
+          <DockPanel><Button DockPanel.Dock="Right" Content="意见反馈 / 联系客服" Click="Feedback_Click"/><TextBlock Text="{Binding QuickGuideText}" Foreground="#36566F" Margin="5,4,5,0" TextWrapping="Wrap" VerticalAlignment="Center"/></DockPanel>
+        </StackPanel>
+      </Expander>
+      <GroupBox Header="转换设置（选择目标格式后，这里只显示相关参数）" Grid.Row="1" Padding="8" Margin="0,8,0,0">
+        <StackPanel>
+          <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="180"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+            <TextBlock Text="目标格式：" VerticalAlignment="Center"/><ComboBox Grid.Column="1" ItemsSource="{Binding TargetFormats}" SelectedItem="{Binding SelectedTarget}"/>
+            <TextBlock Grid.Column="2" Text="输出目录：" VerticalAlignment="Center" Margin="12,0,0,0"/><TextBox Grid.Column="3" Text="{Binding OutputDirectory,UpdateSourceTrigger=PropertyChanged}"/><Button Grid.Column="4" Content="浏览…" Click="Browse_Click"/>
+          </Grid>
+          <Border BorderBrush="#D0D0D0" BorderThickness="0,1,0,0" Margin="0,7,0,0" Padding="0,7,0,0">
+            <Grid>
+              <WrapPanel Visibility="{Binding ImageSettingsVisibility}">
+                <TextBlock Text="图片质量：" VerticalAlignment="Center"/><TextBox Text="{Binding ImageQuality}" Width="52" ToolTip="1–100，仅 JPEG 有效"/><TextBlock Text="%" VerticalAlignment="Center"/>
+                <TextBlock Text="渲染 DPI：" Margin="18,0,0,0" VerticalAlignment="Center"/><TextBox Text="{Binding RenderDpi}" Width="58" ToolTip="PDF 转图片使用 72–600 DPI"/>
+                <TextBlock Text="PDF 页码：" Margin="18,0,0,0" VerticalAlignment="Center"/><TextBox Text="{Binding PdfPageRange}" Width="150" ToolTip="留空表示全部，例如 1,3-5"/>
+              </WrapPanel>
+              <WrapPanel Visibility="{Binding PdfSettingsVisibility}">
+                <TextBlock Text="页码范围：" VerticalAlignment="Center"/><TextBox Text="{Binding PdfPageRange}" Width="135" ToolTip="留空表示全部，例如 1,3-5"/>
+                <TextBlock Text="旋转：" Margin="15,0,0,0" VerticalAlignment="Center"/><ComboBox ItemsSource="{Binding RotationChoices}" SelectedItem="{Binding SelectedRotation}" Width="80"/>
+                <CheckBox Content="压缩内容流" IsChecked="{Binding CompressPdf}" VerticalAlignment="Center" Margin="15,0,0,0"/>
+                <TextBlock Text="文字水印：" Margin="15,0,0,0" VerticalAlignment="Center"/><TextBox Text="{Binding PdfWatermark}" Width="180"/>
+                <TextBlock Text="合并文件名：" Margin="15,0,0,0" VerticalAlignment="Center"/><TextBox Text="{Binding MergeFileName}" Width="130" ToolTip="留空时使用首个文件名"/>
+                <CheckBox Content="强力压缩（页面栅格化）" IsChecked="{Binding RasterCompressPdf}" VerticalAlignment="Center" Margin="15,0,0,0" ToolTip="明显减小扫描型 PDF；会丢失原有可选文字、链接与表单"/>
+                <TextBlock Text="DPI：" Margin="10,0,0,0" VerticalAlignment="Center"/><TextBox Text="{Binding CompressionDpi}" Width="48"/>
+                <TextBlock Text="JPEG：" Margin="10,0,0,0" VerticalAlignment="Center"/><TextBox Text="{Binding CompressionQuality}" Width="42"/>
+              </WrapPanel>
+              <WrapPanel Visibility="{Binding OcrSettingsVisibility}">
+                <TextBlock Text="识别语言：" VerticalAlignment="Center"/><ComboBox ItemsSource="{Binding OcrLanguages}" SelectedItem="{Binding SelectedOcrLanguage}" Width="135"/>
+                <TextBlock Text="页码范围：" Margin="15,0,0,0" VerticalAlignment="Center"/><TextBox Text="{Binding OcrPageRange}" Width="135" ToolTip="留空表示全部，例如 1,3-5"/>
+                <TextBlock Text="OCR DPI：" Margin="15,0,0,0" VerticalAlignment="Center"/><TextBox Text="{Binding OcrDpi}" Width="58"/>
+                <TextBlock Text="推荐 300 DPI；越高越清晰但速度越慢" Foreground="Gray" Margin="12,0,0,0" VerticalAlignment="Center"/>
+              </WrapPanel>
+            </Grid>
+          </Border>
+        </StackPanel>
+      </GroupBox>
+      <GroupBox Header="输入文件（可拖入文件或文件夹；列表顺序即合并顺序）" Grid.Row="2" Margin="0,8,0,0">
+        <DockPanel><StackPanel DockPanel.Dock="Right" Width="105"><Button Content="添加…" Click="AddFiles_Click"/><Button Content="移除" Click="Remove_Click"/><Button Content="上移" Click="MoveUp_Click"/><Button Content="下移" Click="MoveDown_Click"/></StackPanel>
+          <ListView x:Name="InputList" ItemsSource="{Binding InputFiles}" SelectionMode="Extended"><ListView.View><GridView><GridViewColumn Header="文件名" DisplayMemberBinding="{Binding Name}" Width="220"/><GridViewColumn Header="格式" DisplayMemberBinding="{Binding Extension}" Width="70"/><GridViewColumn Header="路径" DisplayMemberBinding="{Binding FullName}" Width="620"/></GridView></ListView.View></ListView>
+        </DockPanel>
+      </GroupBox>
+      <DockPanel Grid.Row="3" Margin="0,8"><TextBlock Text="合并支持 PDF、PNG、JPEG、BMP、TIFF；优先使用所选文件。" Foreground="Gray" VerticalAlignment="Center"/><StackPanel DockPanel.Dock="Right" Orientation="Horizontal"><Button Content="合并为单个 PDF" Width="135" Click="MergePdf_Click"/><Button Content="开始转换" Width="120" Click="Start_Click"/><Button Content="取消所选" Width="100" Click="Cancel_Click"/><Button Content="重试失败" Width="100" Click="Retry_Click"/></StackPanel></DockPanel>
+      <TabControl Grid.Row="4">
+        <TabItem Header="任务队列"><ListView x:Name="QueueList" ItemsSource="{Binding QueueItems}" SelectionMode="Extended"><ListView.View><GridView><GridViewColumn Header="文件" DisplayMemberBinding="{Binding FileName}" Width="220"/><GridViewColumn Header="目标" DisplayMemberBinding="{Binding Target}" Width="100"/><GridViewColumn Header="状态" DisplayMemberBinding="{Binding StatusText}" Width="90"/><GridViewColumn Header="进度" DisplayMemberBinding="{Binding ProgressText}" Width="80"/><GridViewColumn Header="消息" DisplayMemberBinding="{Binding Message}" Width="590"/></GridView></ListView.View></ListView></TabItem>
+        <TabItem Header="历史记录">
+          <DockPanel><StackPanel DockPanel.Dock="Right" Width="115"><Button Content="打开结果" Click="OpenHistoryResult_Click"/><Button Content="重新添加" Click="ReAddHistory_Click"/><Button Content="清空历史" Click="ClearHistory_Click"/></StackPanel>
+            <ListView x:Name="HistoryList" ItemsSource="{Binding HistoryItems}"><ListView.View><GridView><GridViewColumn Header="时间" DisplayMemberBinding="{Binding TimeText}" Width="145"/><GridViewColumn Header="输入文件" DisplayMemberBinding="{Binding FileName}" Width="210"/><GridViewColumn Header="目标" DisplayMemberBinding="{Binding Target}" Width="85"/><GridViewColumn Header="状态" DisplayMemberBinding="{Binding StatusText}" Width="75"/><GridViewColumn Header="输出/错误" DisplayMemberBinding="{Binding Detail}" Width="530"/></GridView></ListView.View></ListView>
+          </DockPanel>
+        </TabItem>
+      </TabControl>
+    </Grid>
+  </DockPanel>
+</Window>

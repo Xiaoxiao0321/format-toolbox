@@ -1,0 +1,20 @@
+格式转换工具箱 1.0.0 - 第三方软件声明
+=====================================
+
+本产品发行包包含下列开源运行时组件：
+
+- Microsoft .NET 8 Runtime 及 Microsoft.Extensions 8.0.x - MIT
+- PDFsharp-WPF 6.2.4 - MIT
+- PDFtoImage 5.4.0 - MIT
+- bblanchon.PDFium.Win32 152.0.7961 - 包元数据为 Apache-2.0；二进制分发项目声明为 MIT
+- PDFium - BSD 3-Clause，并包含其 LICENSE 中列出的 Apache-2.0 代码
+- SkiaSharp / SkiaSharp.NativeAssets.Win32 4.150.1 - MIT，并包含第三方材料
+- Tesseract .NET wrapper 5.2.0 与 Tesseract OCR - Apache-2.0
+- Leptonica - BSD 2-Clause
+- chi_sim 与 eng tessdata 语言模型 - Apache-2.0
+- System.Reflection.Emit 4.7.0、System.Security.Cryptography.Pkcs 8.0.1 - MIT
+
+完整通用许可文本、PDFium/Leptonica 声明及 SkiaSharp 随包第三方声明位于 licenses 目录。
+各组件的著作权归其各自权利人所有；许可文本与本声明发生差异时，以各组件原始许可为准。
+
+Microsoft Office、WPS Office 与 AutoCAD 不随本产品分发；相应转换功能仅调用用户电脑上已安装的软件。

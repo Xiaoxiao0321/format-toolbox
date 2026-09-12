@@ -1,0 +1,34 @@
+# .NET 编译产物（适用于各级项目目录）
+bin/
+obj/
+
+# 编辑器缓存和个人设置
+.vs/
+*.user
+*.suo
+
+# 测试报告与发布产物
+TestResults/
+/artifacts/
+
+# 本机运行时缓存、依赖缓存和下载的工具
+/.dotnet-home/
+/.nuget/
+/.tools/
+
+# 临时工作文件
+/tmp/
+
+# 本地环境配置和签名私钥；示例文件不应含真实凭据
+.env
+.env.*
+!.env.example
+*.pfx
+*.p12
+
+# Windows 自动生成的文件
+Thumbs.db
+Desktop.ini
+
+# 反馈网站已使用独立 Git 仓库，需在其目录中单独提交和备份
+/feedback-site/

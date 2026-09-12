@@ -1,0 +1,7 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup><OutputType>Exe</OutputType></PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\FormatToolbox.Core\FormatToolbox.Core.csproj" />
+    <PackageReference Include="PDFsharp-WPF" Version="6.2.4" />
+  </ItemGroup>
+</Project>

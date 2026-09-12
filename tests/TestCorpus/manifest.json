@@ -1,0 +1,13 @@
+{
+  "schemaVersion": 1,
+  "automatic": [
+    "pdf-multipage", "pdf-render", "pdf-ocr-eng", "pdf-ocr-chi-sim",
+    "pdf-encrypted", "pdf-corrupt", "unicode-long-path", "output-locked"
+  ],
+  "conditional": {
+    "Word.Application": ["fonts", "headers-footers", "toc", "tables", "comments"],
+    "Excel.Application": ["worksheets", "print-area", "landscape", "formulas"],
+    "PowerPoint.Application": ["transparency", "theme-fonts", "overflow", "hidden-slides"],
+    "AutoCAD.Application": ["tab-order", "frozen-layers", "external-references", "missing-fonts"]
+  }
+}

@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup><IsPackable>false</IsPackable><IsTestProject>true</IsTestProject></PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.11.1" />
+    <PackageReference Include="xunit" Version="2.9.2" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="2.8.2"><PrivateAssets>all</PrivateAssets></PackageReference>
+    <PackageReference Include="PDFsharp-WPF" Version="6.2.4" />
+    <PackageReference Include="SkiaSharp" Version="4.150.1" />
+    <ProjectReference Include="..\..\src\FormatToolbox.Core\FormatToolbox.Core.csproj" />
+    <ProjectReference Include="..\..\src\FormatToolbox.Infrastructure\FormatToolbox.Infrastructure.csproj" />
+  </ItemGroup>
+</Project>
