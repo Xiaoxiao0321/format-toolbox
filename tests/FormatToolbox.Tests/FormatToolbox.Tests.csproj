@@ -8,5 +8,6 @@
     <PackageReference Include="SkiaSharp" Version="4.150.1" />
     <ProjectReference Include="..\..\src\FormatToolbox.Core\FormatToolbox.Core.csproj" />
     <ProjectReference Include="..\..\src\FormatToolbox.Infrastructure\FormatToolbox.Infrastructure.csproj" />
+    <ProjectReference Include="..\..\src\FormatToolbox.App\FormatToolbox.App.csproj" />
   </ItemGroup>
 </Project>

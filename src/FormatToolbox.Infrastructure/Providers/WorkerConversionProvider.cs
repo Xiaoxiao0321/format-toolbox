@@ -46,7 +46,8 @@ public sealed class WorkerConversionProvider(string id, IEnumerable<string> inpu
         var output = OutputPathResolver.Resolve(request);
         try { OutputSafety.EnsureReady(output, new FileInfo(request.InputPath).Length * 3); }
         catch (Exception ex) { return OutputSafety.Failure(ex, sw.Elapsed, Id); }
-        var temp = Path.Combine(Path.GetDirectoryName(output)!, $".{Guid.NewGuid():N}.pdf.tmp");
+        var sessionDirectory = Path.Combine(Path.GetDirectoryName(output)!, $".FormatToolbox-worker-{Guid.NewGuid():N}");
+        var temp = Path.Combine(sessionDirectory, "output.pdf");
         var psi = new ProcessStartInfo(workerPath)
         {
             UseShellExecute = false, CreateNoWindow = true,
@@ -57,42 +58,35 @@ public sealed class WorkerConversionProvider(string id, IEnumerable<string> inpu
         psi.ArgumentList.Add("--engine"); psi.ArgumentList.Add(Id);
         psi.ArgumentList.Add("--input"); psi.ArgumentList.Add(Path.GetFullPath(request.InputPath));
         psi.ArgumentList.Add("--output"); psi.ArgumentList.Add(temp);
-        using var process = Process.Start(psi)!;
-        var stdoutTask = process.StandardOutput.ReadToEndAsync();
-        var stderrTask = process.StandardError.ReadToEndAsync();
+        psi.ArgumentList.Add("--cancel"); psi.ArgumentList.Add(Path.Combine(sessionDirectory, "cancel"));
+        psi.ArgumentList.Add("--owned-process"); psi.ArgumentList.Add(Path.Combine(sessionDirectory, "automation.json"));
         try
         {
+            Directory.CreateDirectory(sessionDirectory);
             progress?.Report(new(20, $"正在调用 {dependency}"));
-            using var timeoutSource = new CancellationTokenSource(timeout ?? TimeSpan.FromMinutes(10));
-            using var linkedSource = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, timeoutSource.Token);
-            using var registration = linkedSource.Token.Register(() => { try { process.Kill(true); } catch { } });
-            try { await process.WaitForExitAsync(linkedSource.Token); }
-            catch (OperationCanceledException) when (timeoutSource.IsCancellationRequested && !cancellationToken.IsCancellationRequested)
+            var execution = await WorkerProcessRunner.RunAsync(psi, sessionDirectory, timeout ?? TimeSpan.FromMinutes(10), cancellationToken);
+            var response = JsonSerializer.Deserialize<WorkerResponse>(execution.StandardOutput);
+            if (execution.ExitCode != 0 || response?.Success != true)
             {
-                await EnsureTerminatedAsync(process);
-                return ConversionResult.Failure(ErrorCodes.Timeout, $"{dependency} 转换超过 {(timeout ?? TimeSpan.FromMinutes(10)).TotalMinutes:0} 分钟，已终止 Worker。", sw.Elapsed, Id);
+                return ConversionResult.Failure(response?.ErrorCode ?? ErrorCodes.EngineFailure, response?.Message ?? execution.StandardError, sw.Elapsed, Id) with { HResult = response?.HResult, Warnings = response?.Warnings ?? [] };
             }
-            var responseText = await stdoutTask;
-            var errorText = await stderrTask;
-            var response = JsonSerializer.Deserialize<WorkerResponse>(responseText);
-            if (process.ExitCode != 0 || response?.Success != true)
-            {
-                return ConversionResult.Failure(response?.ErrorCode ?? ErrorCodes.EngineFailure, response?.Message ?? errorText, sw.Elapsed, Id) with { HResult = response?.HResult };
-            }
+            cancellationToken.ThrowIfCancellationRequested();
             File.Move(temp, output, request.OverwritePolicy == OverwritePolicy.Overwrite);
-            progress?.Report(new(100, "转换完成"));
-            return ConversionResult.Success(output, sw.Elapsed, response.Engine ?? Id, response.Warnings?.ToArray() ?? []);
+            progress?.Report(new(100, response.PartialSuccess ? "部分布局已输出" : "转换完成"));
+            return response.ToResult(output, sw.Elapsed, Id);
         }
-        catch (OperationCanceledException) { await EnsureTerminatedAsync(process); return ConversionResult.Failure(ErrorCodes.Cancelled, "任务已取消。", sw.Elapsed, Id); }
+        catch (OperationCanceledException) { return ConversionResult.Failure(ErrorCodes.Cancelled, "任务已取消。", sw.Elapsed, Id); }
+        catch (TimeoutException) { return ConversionResult.Failure(ErrorCodes.Timeout, $"{dependency} 转换超时，已终止 Worker 并清理。", sw.Elapsed, Id); }
         catch (Exception ex) { DiagnosticLog.Write(Id, ex); return OutputSafety.Failure(ex, sw.Elapsed, Id); }
-        finally { try { if (File.Exists(temp)) File.Delete(temp); } catch (Exception ex) { DiagnosticLog.Write(Id + ".cleanup", ex); } }
+        finally
+        {
+            try
+            {
+                var fullSession = Path.GetFullPath(sessionDirectory);
+                if (Path.GetDirectoryName(fullSession) == Path.GetFullPath(Path.GetDirectoryName(output)!)) await TemporaryFileCleanup.DeleteDirectoryAsync(fullSession, Id);
+            }
+            catch (Exception ex) { DiagnosticLog.Write(Id + ".cleanup", ex); }
+        }
     }
 
-    private static async Task EnsureTerminatedAsync(Process process)
-    {
-        try { if (!process.HasExited) process.Kill(true); } catch { }
-        try { await process.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(5)); } catch { }
-    }
-
-    private sealed record WorkerResponse(bool Success, string? ErrorCode, string? Message, string? Engine, List<string>? Warnings, int? HResult = null);
 }

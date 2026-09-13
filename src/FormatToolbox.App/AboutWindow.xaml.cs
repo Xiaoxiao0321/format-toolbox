@@ -12,6 +12,7 @@ public partial class AboutWindow : Window
     public AboutWindow()
     {
         InitializeComponent();
+        WindowSizing.Attach(this);
         var version = Assembly.GetExecutingAssembly().GetName().Version?.ToString(3) ?? "1.0.0";
         VersionText.Text = $"版本 {version} · Windows 10/11 x64";
         var runtime = RuntimeDependencyDetector.DetectVcppX64();

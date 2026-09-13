@@ -124,10 +124,11 @@ public sealed class CoreTests : IDisposable
     public async Task Pdf_strong_compression_rasterizes_and_rebuilds_pages()
     {
         var input = CreateSamplePdf(); var provider = new PdfConversionProvider();
-        var result = await provider.ConvertAsync(new(input, "pdf", _directory, Options: new PdfOptions(RasterizeForCompression: true, CompressionDpi: 96, CompressionJpegQuality: 50)), null, CancellationToken.None);
+        var result = await provider.ConvertAsync(new(input, "pdf", _directory, Options: new PdfOptions(RotationDegrees: 90, RasterizeForCompression: true, CompressionDpi: 96, CompressionJpegQuality: 50)), null, CancellationToken.None);
         Assert.Equal(ConversionStatus.Succeeded, result.Status);
         using var compressed = PdfSharp.Pdf.IO.PdfReader.Open(result.OutputFiles.Single(), PdfSharp.Pdf.IO.PdfDocumentOpenMode.Import);
         Assert.Equal(1, compressed.PageCount);
+        Assert.Equal(90, compressed.Pages[0].Rotate);
         Assert.True(new FileInfo(result.OutputFiles.Single()).Length > 100);
     }
 

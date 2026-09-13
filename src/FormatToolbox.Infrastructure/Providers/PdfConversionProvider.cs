@@ -5,12 +5,13 @@ using PdfSharp.Pdf;
 using PdfSharp.Pdf.IO;
 using PDFtoImage;
 using SkiaSharp;
+using System.Windows.Media.Imaging;
 
 namespace FormatToolbox.Infrastructure.Providers;
 
 public sealed class PdfConversionProvider : IConversionProvider
 {
-    private static readonly HashSet<string> Inputs = new(StringComparer.OrdinalIgnoreCase) { "pdf", "png", "jpg", "jpeg", "bmp", "tif", "tiff" };
+    private static readonly HashSet<string> Inputs = new(StringComparer.OrdinalIgnoreCase) { "pdf", "png", "jpg", "jpeg", "bmp", "tif", "tiff", "webp" };
     private static readonly HashSet<string> Outputs = new(StringComparer.OrdinalIgnoreCase) { "pdf" };
     public string Id => "pdf.pdfsharp";
     public ConversionCapability Capability => new(Id, Inputs, Outputs, "PDFsharp 6.2.4 (MIT)", true);
@@ -48,7 +49,7 @@ public sealed class PdfConversionProvider : IConversionProvider
         catch (OperationCanceledException) { return ConversionResult.Failure(ErrorCodes.Cancelled, "任务已取消。", sw.Elapsed, Id); }
         catch (PdfReaderException ex) { return ConversionResult.Failure(ErrorCodes.InvalidOrEncrypted, ex.Message, sw.Elapsed, Id); }
         catch (Exception ex) { return OutputSafety.Failure(ex, sw.Elapsed, Id); }
-        finally { if (temp is not null && File.Exists(temp)) File.Delete(temp); }
+        finally { if (temp is not null) await TemporaryFileCleanup.DeleteFileAsync(temp, Id); }
     }
 
     private static void Build(ConversionRequest request, string outputPath, IProgress<ConversionProgress>? progress, CancellationToken token)
@@ -62,7 +63,7 @@ public sealed class PdfConversionProvider : IConversionProvider
             token.ThrowIfCancellationRequested();
             if (Path.GetExtension(input).Equals(".pdf", StringComparison.OrdinalIgnoreCase) && options.RasterizeForCompression) AddRasterizedPdf(output, input, options, token);
             else if (Path.GetExtension(input).Equals(".pdf", StringComparison.OrdinalIgnoreCase)) AddPdf(output, input, options, token);
-            else AddImage(output, input);
+            else AddImage(output, input, token);
             completed++;
             progress?.Report(new(10 + 80d * completed / inputs.Length, $"已处理 {completed}/{inputs.Length}"));
         }
@@ -87,6 +88,7 @@ public sealed class PdfConversionProvider : IConversionProvider
             var page = output.AddPage();
             page.Width = XUnit.FromPoint(image.PixelWidth * 72d / options.CompressionDpi);
             page.Height = XUnit.FromPoint(image.PixelHeight * 72d / options.CompressionDpi);
+            page.Rotate = NormalizeRotation(options.RotationDegrees);
             using var graphics = XGraphics.FromPdfPage(page);
             graphics.DrawImage(image, 0, 0, page.Width.Point, page.Height.Point);
             if (!string.IsNullOrWhiteSpace(options.Watermark)) DrawWatermark(page, options.Watermark);
@@ -109,11 +111,18 @@ public sealed class PdfConversionProvider : IConversionProvider
         }
     }
 
-    private static void AddImage(PdfDocument output, string path)
+    private static void AddImage(PdfDocument output, string path, CancellationToken token)
     {
-        using var image = XImage.FromFile(path);
-        var page = output.AddPage(); page.Width = XUnit.FromPoint(image.PointWidth); page.Height = XUnit.FromPoint(image.PointHeight);
-        using var graphics = XGraphics.FromPdfPage(page); graphics.DrawImage(image, 0, 0, image.PointWidth, image.PointHeight);
+        foreach (var frame in ImageFrameReader.Read(path))
+        {
+            token.ThrowIfCancellationRequested();
+            using var stream = new MemoryStream();
+            var encoder = new PngBitmapEncoder(); encoder.Frames.Add(frame); encoder.Save(stream); stream.Position = 0;
+            using var image = XImage.FromStream(stream);
+            var page = output.AddPage();
+            page.Width = XUnit.FromPoint(frame.PixelWidth * 72d / frame.DpiX); page.Height = XUnit.FromPoint(frame.PixelHeight * 72d / frame.DpiY);
+            using var graphics = XGraphics.FromPdfPage(page); graphics.DrawImage(image, 0, 0, page.Width.Point, page.Height.Point);
+        }
     }
 
     private static void DrawWatermark(PdfPage page, string text)

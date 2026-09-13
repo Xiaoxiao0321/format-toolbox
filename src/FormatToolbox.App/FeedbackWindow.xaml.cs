@@ -16,6 +16,7 @@ public partial class FeedbackWindow : Window
     public FeedbackWindow(IEnumerable<IConversionProvider> providers)
     {
         InitializeComponent();
+        WindowSizing.Attach(this);
         _providers = providers.ToArray();
         Loaded += LoadEnvironmentAsync;
     }
@@ -50,9 +51,9 @@ public partial class FeedbackWindow : Window
 
     private void OpenWebsite_Click(object sender, RoutedEventArgs e)
     {
-        if (System.Windows.MessageBox.Show(this,
+        if (!ConfirmationWindow.Confirm(this,
             "将使用系统默认浏览器打开在线反馈网页，需要联网。应用不会自动上传文档、日志或环境信息。是否继续？",
-            "打开在线反馈", MessageBoxButton.YesNo, MessageBoxImage.Information) != MessageBoxResult.Yes) return;
+            "打开在线反馈")) return;
         TryUserAction("feedback.open-website", () => Process.Start(new ProcessStartInfo(FeedbackUrl) { UseShellExecute = true }),
             "已请求浏览器打开反馈网页。若没有打开，可复制网址后自行访问。", "无法打开浏览器，请复制网址后自行访问。");
     }
@@ -76,7 +77,7 @@ public partial class FeedbackWindow : Window
         {
             DiagnosticLog.Write(area, ex);
             StatusText.Text = failure;
-            System.Windows.MessageBox.Show(this, failure, "意见反馈", MessageBoxButton.OK, MessageBoxImage.Warning);
+            ConfirmationWindow.ShowMessage(this, failure, "意见反馈");
         }
     }
     private void Close_Click(object sender, RoutedEventArgs e) => Close();

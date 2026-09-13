@@ -15,7 +15,12 @@ public sealed class ConversionRegistry(IEnumerable<IConversionProvider> provider
     public IConversionProvider? Resolve(ConversionRequest request)
     {
         var matches = _providers.Where(p => p.Capability.InputFormats.Contains(Path.GetExtension(request.InputPath).TrimStart('.')) && p.Capability.OutputFormats.Contains(request.TargetFormat.TrimStart('.')));
-        return request.Options is OcrOptions ? matches.FirstOrDefault(p => p.Id.StartsWith("ocr.")) : matches.FirstOrDefault(p => !p.Id.StartsWith("ocr."));
+        return request.Options switch
+        {
+            OcrOptions => matches.FirstOrDefault(p => p.Id.StartsWith("ocr.")),
+            PdfSplitOptions => matches.FirstOrDefault(p => p.Id == "pdf.split"),
+            _ => matches.FirstOrDefault(p => !p.Id.StartsWith("ocr.") && p.Id != "pdf.split")
+        };
     }
 
     public string DescribeUnsupportedConversion(ConversionRequest request)
