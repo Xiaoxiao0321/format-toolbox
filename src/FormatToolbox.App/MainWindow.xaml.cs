@@ -154,7 +154,23 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private void Cancel_Click(object sender, RoutedEventArgs e) { foreach (QueueRow row in QueueList.SelectedItems) _queue.Cancel(row.Item.Id); }
     private void Retry_Click(object sender, RoutedEventArgs e) { foreach (var row in QueueItems.Where(x => x.Item.Status == ConversionStatus.Failed).ToArray()) { var displayTarget = row.Item.Request.Options is OcrOptions ? "可搜索 PDF (OCR)" : row.Item.Request.TargetFormat; var item = _queue.Enqueue(row.Item.Request); QueueItems.Add(new(item)); StatusText = $"已重试 {displayTarget} 任务。"; } }
     private void Exit_Click(object sender, RoutedEventArgs e) => Close();
-    private void OpenOutput_Click(object sender, RoutedEventArgs e) { var path = !string.IsNullOrWhiteSpace(OutputDirectory) ? OutputDirectory : InputFiles.FirstOrDefault()?.DirectoryName; if (path is not null) Process.Start(new ProcessStartInfo(path) { UseShellExecute = true }); }
+    private void OpenOutput_Click(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            var selected = (QueueList.SelectedItem as QueueRow)?.Item;
+            var output = selected?.Result?.OutputFiles.FirstOrDefault()
+                ?? QueueItems.LastOrDefault(x => x.Item.Status == ConversionStatus.Succeeded)?.Item.Result?.OutputFiles.FirstOrDefault();
+            var path = output is not null ? Path.GetDirectoryName(output)
+                : !string.IsNullOrWhiteSpace(OutputDirectory) ? Path.GetFullPath(OutputDirectory)
+                : InputFiles.FirstOrDefault() is { } input ? Path.Combine(input.DirectoryName!, "转换结果") : null;
+            if (path is null) { ShowError("请先添加文件或选择输出目录。转换完成后，可在这里打开结果目录。"); return; }
+            if (!Directory.Exists(path)) { ShowError($"输出目录尚不存在：{path}。请先完成转换，或检查目录是否已移动或删除。"); return; }
+            Process.Start(new ProcessStartInfo(path) { UseShellExecute = true });
+            StatusText = $"已打开输出目录：{path}";
+        }
+        catch (Exception ex) { ShowError("无法打开输出目录：" + ex.Message); }
+    }
     private void OpenLogs_Click(object sender, RoutedEventArgs e) { Directory.CreateDirectory(DiagnosticLog.DirectoryPath); Process.Start(new ProcessStartInfo(DiagnosticLog.DirectoryPath) { UseShellExecute = true }); }
     private void OpenPdfTools_Click(object sender, RoutedEventArgs e)
         => OpenPdfToolsWindow();

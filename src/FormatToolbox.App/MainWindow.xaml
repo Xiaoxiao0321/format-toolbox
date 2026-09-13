@@ -6,7 +6,7 @@
       <DockPanel><Button DockPanel.Dock="Right" Content="关闭提示" Click="DismissError_Click" Margin="10,0,0,0"/><TextBlock Text="{Binding ErrorText}" Foreground="#7C2D12" TextWrapping="Wrap" VerticalAlignment="Center"/></DockPanel>
     </Border>
     <Grid Margin="0,8,0,0">
-      <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/><RowDefinition Height="2*"/></Grid.RowDefinitions>
+      <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/><RowDefinition Height="2*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
       <Expander Header="快速开始：1 选择功能  →  2 添加或拖入文件  →  3 调整设置  →  4 开始转换" Grid.Row="0" IsExpanded="True" BorderBrush="#C8D6E5" BorderThickness="1" Padding="7">
         <StackPanel>
           <WrapPanel>
@@ -68,6 +68,7 @@
           </DockPanel>
         </TabItem>
       </TabControl>
+      <Button Grid.Row="5" Content="打开输出目录" Click="OpenOutput_Click" HorizontalAlignment="Right" Width="145" Margin="0,8,0,0" ToolTip="打开所选任务或最近成功任务的结果目录；默认保存到输入文件旁的“转换结果”文件夹"/>
     </Grid>
   </DockPanel>
 </Window>
