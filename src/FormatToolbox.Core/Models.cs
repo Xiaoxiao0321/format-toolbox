@@ -25,7 +25,7 @@ public sealed record PdfOptions(
     int CompressionDpi = 144,
     int CompressionJpegQuality = 75,
     IReadOnlyList<int>? PageOrder = null) : ConversionOptions;
-public sealed record OcrOptions(string Languages = "chi_sim+eng", string? PageRange = null, int Dpi = 300) : ConversionOptions;
+public sealed record OcrOptions(string Languages = "chi_sim+eng", string? PageRange = null, int Dpi = 300, bool Grayscale = false) : ConversionOptions;
 public sealed record DwgOptions(bool IncludeModel = false) : ConversionOptions;
 
 public sealed record ConversionResult(
@@ -37,6 +37,7 @@ public sealed record ConversionResult(
     TimeSpan Duration,
     string Engine)
 {
+    public int? HResult { get; init; }
     public static ConversionResult Success(string output, TimeSpan elapsed, string engine, params string[] warnings) =>
         new(ConversionStatus.Succeeded, [output], warnings, null, null, elapsed, engine);
     public static ConversionResult Failure(string code, string message, TimeSpan elapsed, string engine) =>

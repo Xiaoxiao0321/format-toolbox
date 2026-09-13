@@ -1,7 +1,6 @@
 using System.Diagnostics;
 using System.Text.Json;
 using FormatToolbox.Core;
-using Microsoft.Win32;
 
 namespace FormatToolbox.Infrastructure.Providers;
 
@@ -13,14 +12,22 @@ public sealed class WorkerConversionProvider(string id, IEnumerable<string> inpu
 
     public ValueTask<AvailabilityResult> CheckAvailabilityAsync(CancellationToken cancellationToken = default)
     {
-        var type = Type.GetTypeFromProgID(progId, false);
-        var clsid = type?.GUID.ToString("B");
-        using var localServer = clsid is null ? null : Registry.ClassesRoot.OpenSubKey($"CLSID\\{clsid}\\LocalServer32");
-        using var inprocServer = clsid is null ? null : Registry.ClassesRoot.OpenSubKey($"CLSID\\{clsid}\\InprocServer32");
-        var server = localServer?.GetValue(null)?.ToString() ?? inprocServer?.GetValue(null)?.ToString();
-        var available = type is not null && !string.IsNullOrWhiteSpace(server);
-        Capability = Capability with { IsAvailable = available, UnavailableReason = available ? null : $"请安装桌面版 {dependency}" };
-        return ValueTask.FromResult(new AvailabilityResult(available, null, Capability.UnavailableReason));
+        cancellationToken.ThrowIfCancellationRequested();
+        try
+        {
+            var registration = OfficeComDetector.Find(progId);
+            var available = registration is not null;
+            var reason = available ? null : $"无法找到 {dependency} 的自动化组件。若已安装，请先打开该软件完成首次启动，再使用其安装程序修复组件注册后重试。";
+            Capability = Capability with { IsAvailable = available, UnavailableReason = reason };
+            return ValueTask.FromResult(new AvailabilityResult(available, registration is null ? null : $"{registration.ProgId} / {registration.View}", reason));
+        }
+        catch (Exception ex)
+        {
+            DiagnosticLog.Write(Id + ".detect", ex);
+            var reason = $"无法读取 {dependency} 的组件注册信息，请检查系统权限，或使用该软件安装程序修复。";
+            Capability = Capability with { IsAvailable = false, UnavailableReason = reason };
+            return ValueTask.FromResult(new AvailabilityResult(false, Reason: reason));
+        }
     }
 
     public ValidationResult Validate(ConversionRequest request)
@@ -69,13 +76,15 @@ public sealed class WorkerConversionProvider(string id, IEnumerable<string> inpu
             var errorText = await stderrTask;
             var response = JsonSerializer.Deserialize<WorkerResponse>(responseText);
             if (process.ExitCode != 0 || response?.Success != true)
-                return ConversionResult.Failure(response?.ErrorCode ?? ErrorCodes.EngineFailure, response?.Message ?? errorText, sw.Elapsed, Id);
+            {
+                return ConversionResult.Failure(response?.ErrorCode ?? ErrorCodes.EngineFailure, response?.Message ?? errorText, sw.Elapsed, Id) with { HResult = response?.HResult };
+            }
             File.Move(temp, output, request.OverwritePolicy == OverwritePolicy.Overwrite);
             progress?.Report(new(100, "转换完成"));
             return ConversionResult.Success(output, sw.Elapsed, response.Engine ?? Id, response.Warnings?.ToArray() ?? []);
         }
         catch (OperationCanceledException) { await EnsureTerminatedAsync(process); return ConversionResult.Failure(ErrorCodes.Cancelled, "任务已取消。", sw.Elapsed, Id); }
-        catch (Exception ex) { return OutputSafety.Failure(ex, sw.Elapsed, Id); }
+        catch (Exception ex) { DiagnosticLog.Write(Id, ex); return OutputSafety.Failure(ex, sw.Elapsed, Id); }
         finally { try { if (File.Exists(temp)) File.Delete(temp); } catch (Exception ex) { DiagnosticLog.Write(Id + ".cleanup", ex); } }
     }
 
@@ -85,5 +94,5 @@ public sealed class WorkerConversionProvider(string id, IEnumerable<string> inpu
         try { await process.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(5)); } catch { }
     }
 
-    private sealed record WorkerResponse(bool Success, string? ErrorCode, string? Message, string? Engine, List<string>? Warnings);
+    private sealed record WorkerResponse(bool Success, string? ErrorCode, string? Message, string? Engine, List<string>? Warnings, int? HResult = null);
 }

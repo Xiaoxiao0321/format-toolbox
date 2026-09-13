@@ -33,7 +33,7 @@ public sealed class FallbackConversionProvider(
             return new(true, fallback.Id);
         }
 
-        var reason = $"未检测到 {dependencyDescription}";
+        var reason = MissingReason(preferredStatus, fallbackStatus);
         Capability = Capability with { IsAvailable = false, UnavailableReason = reason };
         return new(false, Reason: reason);
     }
@@ -56,6 +56,9 @@ public sealed class FallbackConversionProvider(
             return await fallback.ConvertAsync(request, progress, cancellationToken);
         }
 
-        return ConversionResult.Failure(ErrorCodes.DependencyMissing, $"未检测到 {dependencyDescription}。请安装其中一个桌面组件。", TimeSpan.Zero, Id);
+        return ConversionResult.Failure(ErrorCodes.DependencyMissing, MissingReason(preferredStatus, fallbackStatus), TimeSpan.Zero, Id);
     }
+
+    private string MissingReason(AvailabilityResult first, AvailabilityResult second) =>
+        $"无法使用 {dependencyDescription} 的自动化组件。{first.Reason} {second.Reason} 若尚未安装，请安装其中一个桌面组件。";
 }

@@ -39,6 +39,7 @@ public partial class FeedbackWindow : Window
                 results[names.GetValueOrDefault(provider.Id, provider.Id)] = new(false);
             }
         }
+        foreach (var (name, result) in results) DiagnosticLog.RecordEngine(name, result);
         var version = Assembly.GetExecutingAssembly().GetName().Version?.ToString(3) ?? "未知";
         EnvironmentText.Text = FeedbackEnvironmentFormatter.Format(version, RuntimeInformation.OSDescription,
             RuntimeInformation.ProcessArchitecture.ToString(), Environment.Version.ToString(),
@@ -56,6 +57,7 @@ public partial class FeedbackWindow : Window
             "已请求浏览器打开反馈网页。若没有打开，可复制网址后自行访问。", "无法打开浏览器，请复制网址后自行访问。");
     }
 
+    private void CopyDiagnostics_Click(object sender, RoutedEventArgs e) => CopyText(DiagnosticLog.GetInformation(), "诊断信息已复制，请粘贴到反馈中。");
     private void CopyUrl_Click(object sender, RoutedEventArgs e) => CopyText(FeedbackUrl, "反馈网址已复制。");
     private void CopyEnvironment_Click(object sender, RoutedEventArgs e) => CopyText(EnvironmentText.Text, "环境信息已复制，请自行选择是否粘贴到反馈中。");
     private void CopyText(string text, string message) => TryUserAction("feedback.clipboard",

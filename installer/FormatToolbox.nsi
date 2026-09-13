@@ -8,7 +8,7 @@ RequestExecutionLevel user
 
 !define APP_NAME "格式转换工具箱"
 !ifndef APP_VERSION
-!define APP_VERSION "1.0.0"
+!define APP_VERSION "1.0.5"
 !endif
 !define APP_PUBLISH "..\artifacts\win-x64"
 !define APP_EXE "格式转换工具箱.exe"

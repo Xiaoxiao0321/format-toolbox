@@ -26,9 +26,10 @@ internal static class Program
                 _ => Write(false, ErrorCodes.UnsupportedFormat, "未知转换引擎。", engine, [])
             };
         }
-        catch (COMException ex) { return Write(false, ErrorCodes.InvalidOrEncrypted, Sanitize(ex.Message), engine, []); }
-        catch (UnauthorizedAccessException ex) { return Write(false, ErrorCodes.AccessDenied, Sanitize(ex.Message), engine, []); }
-        catch (Exception ex) { return Write(false, ErrorCodes.EngineFailure, Sanitize(ex.Message), engine, []); }
+        catch (COMException ex) when (ex.HResult == unchecked((int)0x80040154)) { return Write(false, ErrorCodes.DependencyMissing, Sanitize(ex.Message) + " 自动化组件未注册，请使用 Office/WPS 安装程序修复后重试。", engine, [], ex.HResult); }
+        catch (COMException ex) { return Write(false, ErrorCodes.InvalidOrEncrypted, Sanitize(ex.Message), engine, [], ex.HResult); }
+        catch (UnauthorizedAccessException ex) { return Write(false, ErrorCodes.AccessDenied, Sanitize(ex.Message), engine, [], ex.HResult); }
+        catch (Exception ex) { return Write(false, ErrorCodes.EngineFailure, Sanitize(ex.Message), engine, [], ex.HResult); }
     }
 
     private static int ConvertWord(string input, string output, string progId, string displayName)
@@ -163,12 +164,17 @@ internal static class Program
         merged.Save(output);
     }
 
-    private static dynamic Create(string progId) => Activator.CreateInstance(Type.GetTypeFromProgID(progId, true)!)!;
+    private static dynamic Create(string progId)
+    {
+        var registration = OfficeComDetector.Find(progId)
+            ?? throw new COMException("无法找到自动化组件，请先打开对应软件完成首次启动，或使用其安装程序修复组件注册。", unchecked((int)0x80040154));
+        return Activator.CreateInstance(Type.GetTypeFromCLSID(registration.ClassId, true)!)!;
+    }
     private static void Release(object? value) { if (value is not null && Marshal.IsComObject(value)) Marshal.FinalReleaseComObject(value); }
     private static string Sanitize(string message) => message.Replace(Environment.UserName, "<user>", StringComparison.OrdinalIgnoreCase);
-    private static int Write(bool success, string? code, string? message, string engine, List<string> warnings)
+    private static int Write(bool success, string? code, string? message, string engine, List<string> warnings, int? hresult = null)
     {
-        Console.Write(JsonSerializer.Serialize(new { Success = success, ErrorCode = code, Message = message, Engine = engine, Warnings = warnings }));
+        Console.Write(JsonSerializer.Serialize(new { Success = success, ErrorCode = code, Message = message, Engine = engine, Warnings = warnings, HResult = hresult }));
         return success ? 0 : 1;
     }
 }

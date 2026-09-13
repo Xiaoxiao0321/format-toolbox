@@ -39,7 +39,7 @@
             <TextBox x:Name="EnvironmentText" Text="正在检测本机转换引擎…" Height="150" IsReadOnly="True" TextWrapping="Wrap" VerticalScrollBarVisibility="Auto"/>
             <WrapPanel>
               <Button x:Name="CopyEnvironmentButton" Content="复制环境信息" IsEnabled="False" Click="CopyEnvironment_Click"/>
-              <Button Content="打开本地诊断日志目录" Click="OpenLogs_Click"/>
+              <Button Content="复制诊断信息" Click="CopyDiagnostics_Click"/><Button Content="打开本地诊断日志目录" Click="OpenLogs_Click"/>
             </WrapPanel>
             <TextBlock Text="日志可能包含文件路径或错误详情。请检查并删除敏感内容后自行发送；不要提交机密文档或唯一副本。" Foreground="#8A5700" TextWrapping="Wrap" Margin="3,5,3,0"/>
           </StackPanel>

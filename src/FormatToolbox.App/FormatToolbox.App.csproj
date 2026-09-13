@@ -2,7 +2,7 @@
   <PropertyGroup>
     <OutputType>WinExe</OutputType><UseWPF>true</UseWPF><UseWindowsForms>true</UseWindowsForms>
     <AssemblyName>格式转换工具箱</AssemblyName><Product>格式转换工具箱</Product>
-    <Version>1.0.2</Version><AssemblyVersion>1.0.2.0</AssemblyVersion><FileVersion>1.0.2.0</FileVersion>
+    <Version>1.0.5</Version><AssemblyVersion>1.0.5.0</AssemblyVersion><FileVersion>1.0.5.0</FileVersion>
     <Authors>FormatToolbox Contributors</Authors><Copyright>Copyright © 2026</Copyright>
     <ApplicationIcon>app-icon.ico</ApplicationIcon>
   </PropertyGroup>

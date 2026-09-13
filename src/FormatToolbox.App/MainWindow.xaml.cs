@@ -4,6 +4,7 @@ using System.Diagnostics;
 using System.IO;
 using System.Runtime.CompilerServices;
 using System.Windows;
+using System.Windows.Interop;
 using FormatToolbox.Core;
 using FormatToolbox.Infrastructure;
 using FormatToolbox.Infrastructure.Providers;
@@ -28,6 +29,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private string _imageQuality = "90", _renderDpi = "144", _pdfPageRange = "", _pdfWatermark = "", _ocrPageRange = "", _ocrDpi = "300", _compressionDpi = "144", _compressionQuality = "75", _mergeFileName = "";
     private string _selectedRotation = "0°", _selectedOcrLanguage = "中英混合";
     private bool _compressPdf = true, _rasterCompressPdf;
+    public bool OcrGrayscale { get; set; }
     public ObservableCollection<FileInfo> InputFiles { get; } = [];
     public ObservableCollection<QueueRow> QueueItems { get; } = [];
     public ObservableCollection<HistoryRow> HistoryItems { get; } = [];
@@ -59,6 +61,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     public MainWindow()
     {
         InitializeComponent(); DataContext = this;
+        SourceInitialized += (_, _) => FitWindowToScreen();
         var worker = Path.Combine(AppContext.BaseDirectory, "FormatToolbox.Worker.exe");
         IConversionProvider[] providers =
         [
@@ -72,7 +75,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             new WorkerConversionProvider("autocad.dwg", ["dwg"], "AutoCAD", "AutoCAD.Application", worker)
         ];
         _registry = new(providers); _queue = new(_registry); _queue.Changed += QueueChanged;
-        Loaded += async (_, _) => { await LoadHistoryAsync(); await DetectEnginesAsync(); };
+        Loaded += async (_, _) => { DiagnosticLog.WriteEnvironment(); await LoadHistoryAsync(); await DetectEnginesAsync(); };
     }
 
     private void AddPaths(IEnumerable<string> paths)
@@ -138,7 +141,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         var request = new ConversionRequest(path, ocr ? "pdf" : target, string.IsNullOrWhiteSpace(OutputDirectory) ? null : OutputDirectory, Options: mergeOptions ?? options, OutputFileName: mergeOptions is null ? null : EmptyToNull(MergeFileName));
         if (_registry.Resolve(request) is null) { ShowError($"{Path.GetFileName(path)}：{_registry.DescribeUnsupportedConversion(request)}"); return false; }
         var item = _queue.Enqueue(request);
-        QueueItems.Add(new(item)); StatusText = "任务已加入队列。"; return true;
+        QueueItems.Add(new(item)); ResultsTabs.SelectedIndex = 0; ResultsTabs.BringIntoView(); StatusText = "任务已加入队列。"; return true;
     }
     private void MergePdf_Click(object sender, RoutedEventArgs e)
     {
@@ -171,6 +174,25 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
         catch (Exception ex) { ShowError("无法打开输出目录：" + ex.Message); }
     }
+
+    private void FitWindowToScreen()
+    {
+        var handle = new WindowInteropHelper(this).Handle;
+        var screen = WinForms.Screen.FromHandle(handle).WorkingArea;
+        var source = HwndSource.FromHwnd(handle);
+        var transform = source?.CompositionTarget?.TransformFromDevice ?? System.Windows.Media.Matrix.Identity;
+        var area = Rect.Transform(new Rect(screen.X, screen.Y, screen.Width, screen.Height), transform);
+        var availableWidth = Math.Max(1, area.Width - 24);
+        var availableHeight = Math.Max(1, area.Height - 24);
+        MinWidth = Math.Min(640, availableWidth);
+        MinHeight = Math.Min(420, availableHeight);
+        Width = Math.Min(1180, availableWidth);
+        Height = Math.Min(860, availableHeight);
+        WindowStartupLocation = WindowStartupLocation.Manual;
+        Left = area.Left + (area.Width - Width) / 2;
+        Top = area.Top + (area.Height - Height) / 2;
+        QuickStartExpander.IsExpanded = area.Height >= 800 && area.Width >= 1000;
+    }
     private void OpenLogs_Click(object sender, RoutedEventArgs e) { Directory.CreateDirectory(DiagnosticLog.DirectoryPath); Process.Start(new ProcessStartInfo(DiagnosticLog.DirectoryPath) { UseShellExecute = true }); }
     private void OpenPdfTools_Click(object sender, RoutedEventArgs e)
         => OpenPdfToolsWindow();
@@ -180,7 +202,12 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         window.ShowDialog();
     }
     private async void Detect_Click(object sender, RoutedEventArgs e) => await DetectEnginesAsync();
-    private async Task DetectEnginesAsync() { var results = new List<string>(); foreach (var p in _registry.Providers) { var r = await p.CheckAvailabilityAsync(); results.Add($"{p.Id}: {(r.IsAvailable ? "可用" + (string.IsNullOrWhiteSpace(r.Version) ? "" : $" ({r.Version})") : r.Reason)}"); } var runtime = RuntimeDependencyDetector.DetectVcppX64(); results.Add("VC++ x64: " + (runtime.IsAvailable ? "可用" : runtime.DisplayText)); StatusText = string.Join("；", results); }
+    private async Task DetectEnginesAsync() { var results = new List<string>(); foreach (var p in _registry.Providers) { var r = await p.CheckAvailabilityAsync(); DiagnosticLog.RecordEngine(p.Id, r); results.Add($"{p.Id}: {(r.IsAvailable ? "可用" + (string.IsNullOrWhiteSpace(r.Version) ? "" : $" ({r.Version})") : r.Reason)}"); } var runtime = RuntimeDependencyDetector.DetectVcppX64(); results.Add("VC++ x64: " + (runtime.IsAvailable ? "可用" : runtime.DisplayText)); StatusText = string.Join("；", results); }
+    private void CopyDiagnostics_Click(object sender, RoutedEventArgs e)
+    {
+        try { System.Windows.Clipboard.SetText(DiagnosticLog.GetInformation()); StatusText = "诊断信息已复制，可粘贴到反馈中。"; }
+        catch (Exception ex) { DiagnosticLog.Write("diagnostics.clipboard", ex); ShowError("剪贴板暂时不可用，请稍后重试。"); }
+    }
     private void About_Click(object sender, RoutedEventArgs e) => new AboutWindow { Owner = this }.ShowDialog();
     private void Feedback_Click(object sender, RoutedEventArgs e) => new FeedbackWindow(_registry.Providers) { Owner = this }.ShowDialog();
     private bool TryBuildOptions(string path, string target, out ConversionOptions? options, out string error)
@@ -190,7 +217,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         {
             if (!TryInt(OcrDpi, 72, 600, "OCR DPI", out var dpi, out error)) return false;
             var languages = SelectedOcrLanguage switch { "简体中文" => "chi_sim", "英文" => "eng", _ => "chi_sim+eng" };
-            options = new OcrOptions(languages, EmptyToNull(OcrPageRange), dpi); return true;
+            options = new OcrOptions(languages, EmptyToNull(OcrPageRange), dpi, OcrGrayscale); return true;
         }
         if (target == "pdf") { var ok = TryCreatePdfOptions(null, out PdfOptions pdfOptions, out error); options = pdfOptions; return ok; }
         if (!TryInt(ImageQuality, 1, 100, "图片质量", out var quality, out error) || !TryInt(RenderDpi, 72, 600, "渲染 DPI", out var dpiValue, out error)) return false;

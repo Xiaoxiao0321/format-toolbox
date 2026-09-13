@@ -74,7 +74,16 @@ public sealed class ConversionQueue
         finally { if (acquired) gate!.Release(); _tokens.TryRemove(item.Id, out _); cts.Dispose(); }
     }
 
-    private void Finish(QueueItem item, ConversionResult result) { item.Result = result; item.Status = result.Status; item.Progress = result.Status == ConversionStatus.Succeeded ? 100 : item.Progress; item.Message = result.ErrorMessage ?? "完成"; Notify(item); }
+    private void Finish(QueueItem item, ConversionResult result)
+    {
+        if (result.Status == ConversionStatus.Failed)
+            DiagnosticLog.WriteFailure(result.Engine, result.ErrorCode ?? ErrorCodes.EngineFailure, result.ErrorMessage, result.HResult);
+        item.Result = result;
+        item.Status = result.Status;
+        item.Progress = result.Status == ConversionStatus.Succeeded ? 100 : item.Progress;
+        item.Message = result.ErrorMessage is null ? "完成" : $"[{result.ErrorCode}] {result.ErrorMessage}";
+        Notify(item);
+    }
     private void Notify(QueueItem item)
     {
         if (Changed is null) return;
