@@ -1,0 +1,4 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup><OutputType>Exe</OutputType><UseWPF>true</UseWPF><EnableDefaultApplicationDefinition>false</EnableDefaultApplicationDefinition></PropertyGroup>
+  <ItemGroup><ProjectReference Include="../../src/FormatToolbox.App/FormatToolbox.App.csproj"/><ProjectReference Include="../../src/FormatToolbox.Infrastructure/FormatToolbox.Infrastructure.csproj"/></ItemGroup>
+</Project>

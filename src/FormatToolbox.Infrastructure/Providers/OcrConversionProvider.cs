@@ -11,7 +11,7 @@ namespace FormatToolbox.Infrastructure.Providers;
 
 public sealed class OcrConversionProvider : IConversionProvider
 {
-    private static readonly HashSet<string> Inputs = new(StringComparer.OrdinalIgnoreCase) { "pdf", "png", "jpg", "jpeg", "bmp", "tif", "tiff" };
+    private static readonly HashSet<string> Inputs = new(StringComparer.OrdinalIgnoreCase) { "pdf", "png", "jpg", "jpeg", "bmp", "tif", "tiff", "webp" };
     private static readonly HashSet<string> Outputs = new(StringComparer.OrdinalIgnoreCase) { "pdf" };
     private readonly string _dataPath;
     public OcrConversionProvider(string dataPath) => _dataPath = dataPath;
@@ -31,13 +31,17 @@ public sealed class OcrConversionProvider : IConversionProvider
         var sw = Stopwatch.StartNew(); var tempImages = new List<string>(); string? generated = null; string? textLayer = null;
         try
         {
+            cancellationToken.ThrowIfCancellationRequested();
+            var validation = Validate(request);
+            if (!validation.IsValid) return ConversionResult.Failure(validation.ErrorCode!, validation.Message!, sw.Elapsed, Id);
             var availability = await CheckAvailabilityAsync(cancellationToken);
             if (!availability.IsAvailable) return ConversionResult.Failure(ErrorCodes.DependencyMissing, availability.Reason!, sw.Elapsed, Id);
             var output = OutputPathResolver.Resolve(request);
             OutputSafety.EnsureReady(output, new FileInfo(request.InputPath).Length * 5);
             var isPdf = Path.GetExtension(request.InputPath).Equals(".pdf", StringComparison.OrdinalIgnoreCase);
             var images = isPdf
-                ? await RenderPagesAsync(request, tempImages, cancellationToken) : [request.InputPath];
+                ? await RenderPagesAsync(request, tempImages, cancellationToken)
+                : await Task.Run(() => PrepareImages(request, tempImages, cancellationToken));
             var options = request.Options as OcrOptions ?? new OcrOptions();
             var outputBase = Path.Combine(Path.GetDirectoryName(output)!, $".{Guid.NewGuid():N}"); generated = outputBase + ".pdf";
             var preserveOriginal = isPdf && !options.Grayscale;
@@ -56,13 +60,37 @@ public sealed class OcrConversionProvider : IConversionProvider
         catch (PdfPasswordProtectedException ex) { return ConversionResult.Failure(ErrorCodes.InvalidOrEncrypted, "PDF 已加密，无法执行 OCR：" + ex.Message, sw.Elapsed, Id); }
         catch (PdfInvalidFormatException ex) { return ConversionResult.Failure(ErrorCodes.InvalidOrEncrypted, "PDF 文件已损坏或格式无效：" + ex.Message, sw.Elapsed, Id); }
         catch (DllNotFoundException ex) { return ConversionResult.Failure(ErrorCodes.DependencyMissing, "缺少 Microsoft Visual C++ 2019 x64 Runtime：" + ex.Message, sw.Elapsed, Id); }
+        catch (NotSupportedException ex) { return ConversionResult.Failure(ErrorCodes.UnsupportedFormat, ex.Message, sw.Elapsed, Id); }
         catch (Exception ex) { return OutputSafety.Failure(ex, sw.Elapsed, Id); }
-        finally { foreach (var file in tempImages) if (File.Exists(file)) File.Delete(file); if (generated is not null && File.Exists(generated)) File.Delete(generated); if (textLayer is not null && File.Exists(textLayer)) File.Delete(textLayer); }
+        finally
+        {
+            foreach (var file in tempImages) await TemporaryFileCleanup.DeleteFileAsync(file, Id);
+            if (generated is not null) await TemporaryFileCleanup.DeleteFileAsync(generated, Id);
+            if (textLayer is not null) await TemporaryFileCleanup.DeleteFileAsync(textLayer, Id);
+        }
     }
 
-    private static async Task<IReadOnlyList<string>> RenderPagesAsync(ConversionRequest request, List<string> temporary, CancellationToken token)
+    private static Task<IReadOnlyList<string>> RenderPagesAsync(ConversionRequest request, List<string> temporary, CancellationToken token)
+        => Task.Run<IReadOnlyList<string>>(() => RenderPages(request, temporary, token));
+
+    private static IReadOnlyList<string> PrepareImages(ConversionRequest request, List<string> temporary, CancellationToken token)
     {
-        await using var pdf = new FileStream(request.InputPath, FileMode.Open, FileAccess.Read, FileShare.Read, 64 * 1024, FileOptions.RandomAccess);
+        token.ThrowIfCancellationRequested();
+        var frames = ImageFrameReader.Read(request.InputPath);
+        if (frames.Count == 1 && !Path.GetExtension(request.InputPath).Equals(".webp", StringComparison.OrdinalIgnoreCase)) return [request.InputPath];
+        foreach (var frame in frames)
+        {
+            token.ThrowIfCancellationRequested();
+            var path = Path.Combine(Path.GetTempPath(), $"FormatToolbox-{Guid.NewGuid():N}.png"); temporary.Add(path);
+            ImageFrameReader.SavePng(frame, path);
+        }
+        return temporary;
+    }
+
+    private static IReadOnlyList<string> RenderPages(ConversionRequest request, List<string> temporary, CancellationToken token)
+    {
+        token.ThrowIfCancellationRequested();
+        using var pdf = new FileStream(request.InputPath, FileMode.Open, FileAccess.Read, FileShare.Read, 64 * 1024, FileOptions.RandomAccess);
         var count = Conversion.GetPageCount(pdf, leaveOpen: true);
         var pages = PageRanges.Parse((request.Options as OcrOptions)?.PageRange, count);
         foreach (var page in pages)
@@ -77,6 +105,7 @@ public sealed class OcrConversionProvider : IConversionProvider
 
     private void Recognize(IReadOnlyList<string> images, string outputBase, OcrOptions options, bool textOnly, bool renderedPdf, IProgress<ConversionProgress>? progress, CancellationToken token)
     {
+        using var outputScope = NativeOutputSynchronization.EnterOcrOutput(token);
         using var engine = new TesseractEngine(_dataPath, options.Languages, EngineMode.LstmOnly);
         using var renderer = ResultRenderer.CreatePdfRenderer(outputBase, _dataPath, textOnly);
         using var document = renderer.BeginDocument("FormatToolbox OCR");

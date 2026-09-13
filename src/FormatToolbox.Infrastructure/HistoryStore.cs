@@ -3,7 +3,7 @@ using FormatToolbox.Core;
 
 namespace FormatToolbox.Infrastructure;
 
-public sealed record HistoryEntry(DateTimeOffset Timestamp, string InputPath, string TargetFormat, ConversionStatus Status, string? Error, IReadOnlyList<string>? OutputFiles = null);
+public sealed record HistoryEntry(DateTimeOffset Timestamp, string InputPath, string TargetFormat, ConversionStatus Status, string? Error, IReadOnlyList<string>? OutputFiles = null, IReadOnlyList<string>? Warnings = null, ConversionRequest? Request = null);
 
 public sealed class HistoryStore
 {
@@ -25,5 +25,10 @@ public sealed class HistoryStore
         }
         finally { _gate.Release(); }
     }
-    public void Clear() { if (File.Exists(_path)) File.Delete(_path); }
+    public async Task ClearAsync()
+    {
+        await _gate.WaitAsync();
+        try { if (File.Exists(_path)) File.Delete(_path); }
+        finally { _gate.Release(); }
+    }
 }

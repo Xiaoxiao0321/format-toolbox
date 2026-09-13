@@ -1,6 +1,8 @@
+using System.Text.Json.Serialization;
+
 namespace FormatToolbox.Core;
 
-public enum ConversionStatus { Waiting, Checking, Processing, Succeeded, Failed, Cancelled }
+public enum ConversionStatus { Waiting, Checking, Processing, Succeeded, Failed, Cancelled, PartialSucceeded }
 public enum OverwritePolicy { Rename, Overwrite, Fail }
 
 public sealed record ConversionRequest(
@@ -11,6 +13,14 @@ public sealed record ConversionRequest(
     ConversionOptions? Options = null,
     string? OutputFileName = null);
 
+[JsonPolymorphic(TypeDiscriminatorPropertyName = "$type")]
+[JsonDerivedType(typeof(ImageOptions), "image")]
+[JsonDerivedType(typeof(PdfRenderOptions), "pdf-render")]
+[JsonDerivedType(typeof(OfficeOptions), "office")]
+[JsonDerivedType(typeof(PdfOptions), "pdf")]
+[JsonDerivedType(typeof(PdfSplitOptions), "pdf-split")]
+[JsonDerivedType(typeof(OcrOptions), "ocr")]
+[JsonDerivedType(typeof(DwgOptions), "dwg")]
 public abstract record ConversionOptions;
 public sealed record ImageOptions(int Quality = 90, double Dpi = 96) : ConversionOptions;
 public sealed record PdfRenderOptions(string? PageRange = null, int Dpi = 144, int JpegQuality = 90) : ConversionOptions;
@@ -27,6 +37,7 @@ public sealed record PdfOptions(
     IReadOnlyList<int>? PageOrder = null) : ConversionOptions;
 public sealed record OcrOptions(string Languages = "chi_sim+eng", string? PageRange = null, int Dpi = 300, bool Grayscale = false) : ConversionOptions;
 public sealed record DwgOptions(bool IncludeModel = false) : ConversionOptions;
+public sealed record PdfSplitOptions(int PagesPerFile = 1, string? PageRanges = null) : ConversionOptions;
 
 public sealed record ConversionResult(
     ConversionStatus Status,
@@ -42,6 +53,13 @@ public sealed record ConversionResult(
         new(ConversionStatus.Succeeded, [output], warnings, null, null, elapsed, engine);
     public static ConversionResult Failure(string code, string message, TimeSpan elapsed, string engine) =>
         new(code == ErrorCodes.Cancelled ? ConversionStatus.Cancelled : ConversionStatus.Failed, [], [], code, message, elapsed, engine);
+
+    public ConversionResult WithCompletedOutputs(IReadOnlyList<string> outputs, int? total = null) => outputs.Count == 0 ? this : this with
+    {
+        Status = ConversionStatus.PartialSucceeded,
+        OutputFiles = outputs.ToArray(),
+        ErrorMessage = $"{ErrorMessage} 已生成 {outputs.Count}{(total is null ? "" : $"/{total}")} 个结果文件，其余未完成。"
+    };
 }
 
 public sealed record ConversionCapability(

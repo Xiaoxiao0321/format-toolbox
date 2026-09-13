@@ -69,7 +69,7 @@ public sealed class OcrColorTests
         Directory.CreateDirectory(Artifacts);
         var input = CreatePdf(grayscale ? "image-gray-original.pdf" : "image-color-original.pdf") + ".png";
         var result = await new OcrConversionProvider(DataPath).ConvertAsync(new(input, "pdf", Artifacts, OverwritePolicy.Overwrite, new OcrOptions("eng", Dpi: 144, Grayscale: grayscale), grayscale ? "image-gray" : "image-color"), null, CancellationToken.None);
-        Assert.Equal(ConversionStatus.Succeeded, result.Status);
+        Assert.True(result.Status == ConversionStatus.Succeeded, $"{result.ErrorCode}: {result.ErrorMessage}");
         using var actual = Conversion.ToImage(File.ReadAllBytes(result.OutputFiles.Single()), 0, options: new RenderOptions(Dpi: 144));
         var hasColor = actual.Pixels.Any(pixel => Math.Abs(pixel.Red - pixel.Green) > 20 || Math.Abs(pixel.Green - pixel.Blue) > 20);
         Assert.Equal(!grayscale, hasColor);

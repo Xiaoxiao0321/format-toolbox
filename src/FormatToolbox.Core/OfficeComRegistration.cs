@@ -2,7 +2,10 @@ using Microsoft.Win32;
 
 namespace FormatToolbox.Core;
 
-public sealed record OfficeComRegistration(Guid ClassId, string ProgId, RegistryView View);
+public sealed record OfficeComRegistration(Guid ClassId, string ProgId, RegistryView View, string? ServerCommand = null)
+{
+    public bool IsWps => ServerCommand is { } command && (command.Contains("wps", StringComparison.OrdinalIgnoreCase) || command.Contains("kingsoft", StringComparison.OrdinalIgnoreCase) || command.Contains(@"\et.exe", StringComparison.OrdinalIgnoreCase));
+}
 
 public static class OfficeComDetector
 {
@@ -28,7 +31,7 @@ public static class OfficeComDetector
                     var inprocServer = view == nativeView ? readValue(view, key + @"\InprocServer32") : null;
                     // Executable COM servers support cross-bitness; in-process DLLs do not.
                     if (!string.IsNullOrWhiteSpace(localServer) || !string.IsNullOrWhiteSpace(inprocServer))
-                        return new(clsid, candidate!, view);
+                        return new(clsid, candidate!, view, localServer ?? inprocServer);
                 }
             }
         }

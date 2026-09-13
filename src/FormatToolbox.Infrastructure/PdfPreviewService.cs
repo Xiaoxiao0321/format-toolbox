@@ -4,6 +4,7 @@ namespace FormatToolbox.Infrastructure;
 
 public sealed class PdfPreviewService
 {
+    public Task<int> GetPageCountAsync(string path, CancellationToken token = default) => Task.Run(() => { token.ThrowIfCancellationRequested(); return GetPageCount(path); }, token);
     public int GetPageCount(string path)
     {
         using var pdf = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read, 64 * 1024, FileOptions.RandomAccess);
@@ -15,6 +16,7 @@ public sealed class PdfPreviewService
         await using var pdf = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read, 64 * 1024, FileOptions.Asynchronous | FileOptions.RandomAccess);
         using var stream = new MemoryStream();
         await Task.Run(() => Conversion.SaveJpeg(stream, pdf, zeroBasedPage, leaveOpen: true, options: new RenderOptions(Width: 180, WithAspectRatio: true)), cancellationToken);
+        cancellationToken.ThrowIfCancellationRequested();
         return stream.ToArray();
     }
 }

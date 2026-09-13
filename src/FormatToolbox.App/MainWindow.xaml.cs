@@ -17,8 +17,12 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 {
     private readonly ConversionRegistry _registry;
     private readonly ConversionQueue _queue;
-    private readonly HistoryStore _history = new();
+    private readonly HistoryStore _history;
     private readonly HashSet<Guid> _recordedTasks = [];
+    private readonly object _historyGate = new();
+    private readonly List<Task> _historyWrites = [];
+    private readonly List<HistoryEntry> _unsavedHistory = [];
+    private bool _exitInProgress, _allowClose;
     private string _selectedTarget = "pdf", _outputDirectory = "", _statusText = "就绪";
     private string _quickGuideText = "选择上方功能即可切换到对应设置；也可以直接拖入文件，再从“目标格式”中选择输出。";
     private string _errorText = "";
@@ -28,6 +32,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private void DismissError_Click(object sender, RoutedEventArgs e) => ErrorText = "";
     private string _imageQuality = "90", _renderDpi = "144", _pdfPageRange = "", _pdfWatermark = "", _ocrPageRange = "", _ocrDpi = "300", _compressionDpi = "144", _compressionQuality = "75", _mergeFileName = "";
     private string _selectedRotation = "0°", _selectedOcrLanguage = "中英混合";
+    private string? _quickAction;
     private bool _compressPdf = true, _rasterCompressPdf;
     public bool OcrGrayscale { get; set; }
     public ObservableCollection<FileInfo> InputFiles { get; } = [];
@@ -36,7 +41,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     public string[] TargetFormats { get; } = ["pdf", "可搜索 PDF (OCR)", "png", "jpg", "bmp", "tiff"];
     public string[] RotationChoices { get; } = ["0°", "90°", "180°", "270°"];
     public string[] OcrLanguages { get; } = ["中英混合", "简体中文", "英文"];
-    public string SelectedTarget { get => _selectedTarget; set { _selectedTarget = value; OnChanged(); OnChanged(nameof(ImageSettingsVisibility)); OnChanged(nameof(PdfSettingsVisibility)); OnChanged(nameof(OcrSettingsVisibility)); } }
+    public string SelectedTarget { get => _selectedTarget; set { _selectedTarget = value; OnChanged(); NotifySettingsChanged(); } }
     public string OutputDirectory { get => _outputDirectory; set { _outputDirectory = value; OnChanged(); } }
     public string StatusText { get => _statusText; set { _statusText = value; OnChanged(); } }
     public string QuickGuideText { get => _quickGuideText; set { _quickGuideText = value; OnChanged(); } }
@@ -49,24 +54,40 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     public string SelectedRotation { get => _selectedRotation; set { _selectedRotation = value; OnChanged(); } }
     public string SelectedOcrLanguage { get => _selectedOcrLanguage; set { _selectedOcrLanguage = value; OnChanged(); } }
     public bool CompressPdf { get => _compressPdf; set { _compressPdf = value; OnChanged(); } }
-    public bool RasterCompressPdf { get => _rasterCompressPdf; set { _rasterCompressPdf = value; OnChanged(); } }
+    public bool RasterCompressPdf { get => _rasterCompressPdf; set { _rasterCompressPdf = value; OnChanged(); NotifySettingsChanged(); } }
     public string CompressionDpi { get => _compressionDpi; set { _compressionDpi = value; OnChanged(); } }
     public string CompressionQuality { get => _compressionQuality; set { _compressionQuality = value; OnChanged(); } }
     public string MergeFileName { get => _mergeFileName; set { _mergeFileName = value; OnChanged(); } }
     public Visibility ImageSettingsVisibility => SelectedTarget is "png" or "jpg" or "bmp" or "tiff" ? Visibility.Visible : Visibility.Collapsed;
-    public Visibility PdfSettingsVisibility => SelectedTarget == "pdf" ? Visibility.Visible : Visibility.Collapsed;
+    public Visibility JpegQualityVisibility => SelectedTarget == "jpg" ? Visibility.Visible : Visibility.Collapsed;
+    private bool HasPdfInput => InputFiles.Any(x => x.Extension.Equals(".pdf", StringComparison.OrdinalIgnoreCase)) || InputFiles.Count == 0 && _quickAction is "pdf-image" or "ocr";
+    private static bool UsesPdfSettings(string path) => new[] { ".pdf", ".png", ".jpg", ".jpeg", ".bmp", ".tif", ".tiff", ".webp" }.Contains(Path.GetExtension(path), StringComparer.OrdinalIgnoreCase);
+    public Visibility PdfRenderSettingsVisibility => SelectedTarget is "png" or "jpg" && HasPdfInput ? Visibility.Visible : Visibility.Collapsed;
+    public Visibility PdfInputSettingsVisibility => HasPdfInput ? Visibility.Visible : Visibility.Collapsed;
+    public Visibility PdfSettingsVisibility => SelectedTarget == "pdf" && (InputFiles.Any(x => UsesPdfSettings(x.FullName)) || InputFiles.Count == 0 && _quickAction is not ("office-pdf" or "dwg")) ? Visibility.Visible : Visibility.Collapsed;
+    public Visibility CompressionSettingsVisibility => RasterCompressPdf ? Visibility.Visible : Visibility.Collapsed;
+    public Visibility DwgWarningVisibility => SelectedTarget == "pdf" && (_quickAction == "dwg" || InputFiles.Any(x => x.Extension.Equals(".dwg", StringComparison.OrdinalIgnoreCase))) ? Visibility.Visible : Visibility.Collapsed;
     public Visibility OcrSettingsVisibility => SelectedTarget.StartsWith("可搜索", StringComparison.Ordinal) ? Visibility.Visible : Visibility.Collapsed;
     public event PropertyChangedEventHandler? PropertyChanged;
-
-    public MainWindow()
+    private void NotifySettingsChanged()
     {
+        foreach (var name in new[] { nameof(ImageSettingsVisibility), nameof(JpegQualityVisibility), nameof(PdfRenderSettingsVisibility), nameof(PdfInputSettingsVisibility), nameof(PdfSettingsVisibility), nameof(CompressionSettingsVisibility), nameof(OcrSettingsVisibility), nameof(DwgWarningVisibility) }) OnChanged(name);
+    }
+
+    public MainWindow() : this(new HistoryStore()) { }
+
+    public MainWindow(HistoryStore history)
+    {
+        _history = history;
         InitializeComponent(); DataContext = this;
+        InputFiles.CollectionChanged += (_, _) => NotifySettingsChanged();
         SourceInitialized += (_, _) => FitWindowToScreen();
         var worker = Path.Combine(AppContext.BaseDirectory, "FormatToolbox.Worker.exe");
         IConversionProvider[] providers =
         [
             new ImageConversionProvider(),
             new PdfConversionProvider(),
+            new PdfSplitProvider(),
             new PdfRenderProvider(),
             new OcrConversionProvider(Path.Combine(AppContext.BaseDirectory, "tessdata")),
             new FallbackConversionProvider("office.word", new WorkerConversionProvider("msoffice.word", ["doc", "docx", "rtf"], "Microsoft Word", "Word.Application", worker), new WorkerConversionProvider("wps.writer", ["doc", "docx", "rtf"], "WPS 文字", "kwps.application", worker), "Microsoft Word 或 WPS 文字"),
@@ -85,7 +106,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         StatusText = $"已添加 {InputFiles.Count} 个文件";
     }
     private void OnDrop(object sender, System.Windows.DragEventArgs e) { if (e.Data.GetDataPresent(System.Windows.DataFormats.FileDrop)) AddPaths((string[])e.Data.GetData(System.Windows.DataFormats.FileDrop)); }
-    private void AddFiles_Click(object sender, RoutedEventArgs e) { var d = new Microsoft.Win32.OpenFileDialog { Multiselect = true, Filter = "支持的文件|*.doc;*.docx;*.rtf;*.xls;*.xlsx;*.csv;*.ppt;*.pptx;*.png;*.jpg;*.jpeg;*.bmp;*.tif;*.tiff;*.webp;*.dwg|所有文件|*.*" }; if (d.ShowDialog() == true) AddPaths(d.FileNames); }
+    private void AddFiles_Click(object sender, RoutedEventArgs e) { var d = new Microsoft.Win32.OpenFileDialog { Multiselect = true, Filter = "支持的文件|*.pdf;*.doc;*.docx;*.rtf;*.xls;*.xlsx;*.csv;*.ppt;*.pptx;*.png;*.jpg;*.jpeg;*.bmp;*.tif;*.tiff;*.webp;*.dwg|PDF 文件|*.pdf|所有文件|*.*" }; if (d.ShowDialog() == true) AddPaths(d.FileNames); }
     private void Remove_Click(object sender, RoutedEventArgs e) { foreach (FileInfo item in InputList.SelectedItems.Cast<FileInfo>().ToArray()) InputFiles.Remove(item); }
     private void Clear_Click(object sender, RoutedEventArgs e) => InputFiles.Clear();
     private void MoveUp_Click(object sender, RoutedEventArgs e) { if (InputList.SelectedItem is FileInfo f) { var i = InputFiles.IndexOf(f); if (i > 0) InputFiles.Move(i, i - 1); } }
@@ -94,6 +115,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private void QuickAction_Click(object sender, RoutedEventArgs e)
     {
         var action = (sender as FrameworkElement)?.Tag as string;
+        _quickAction = action;
         switch (action)
         {
             case "office-pdf":
@@ -126,12 +148,13 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 break;
         }
         StatusText = QuickGuideText;
+        NotifySettingsChanged();
     }
     private void Start_Click(object sender, RoutedEventArgs e)
     {
         ErrorText = "";
         if (InputFiles.Count == 0) { ShowError("请先添加文件。可点击“添加文件”或将文件拖入窗口。"); return; }
-        if (!ConfirmRasterCompression()) return;
+        if (!ConfirmRasterCompression(SelectedTarget == "pdf" && InputFiles.Any(x => x.Extension.Equals(".pdf", StringComparison.OrdinalIgnoreCase)))) return;
         foreach (var file in InputFiles) if (!Enqueue(file.FullName, SelectedTarget)) break;
     }
     private bool Enqueue(string path, string target, PdfOptions? mergeOptions = null)
@@ -140,22 +163,27 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         var ocr = target.StartsWith("可搜索", StringComparison.Ordinal);
         var request = new ConversionRequest(path, ocr ? "pdf" : target, string.IsNullOrWhiteSpace(OutputDirectory) ? null : OutputDirectory, Options: mergeOptions ?? options, OutputFileName: mergeOptions is null ? null : EmptyToNull(MergeFileName));
         if (_registry.Resolve(request) is null) { ShowError($"{Path.GetFileName(path)}：{_registry.DescribeUnsupportedConversion(request)}"); return false; }
-        var item = _queue.Enqueue(request);
-        QueueItems.Add(new(item)); ResultsTabs.SelectedIndex = 0; ResultsTabs.BringIntoView(); StatusText = "任务已加入队列。"; return true;
+        AddQueueRequest(request); ResultsTabs.BringIntoView(); StatusText = "任务已加入队列。"; return true;
     }
     private void MergePdf_Click(object sender, RoutedEventArgs e)
     {
         var selected = InputList.SelectedItems.Cast<FileInfo>().Select(x => x.FullName).ToHashSet(StringComparer.OrdinalIgnoreCase);
         var files = InputFiles.Where(x => selected.Count == 0 || selected.Contains(x.FullName)).ToArray();
-        var supported = new HashSet<string>([".pdf", ".png", ".jpg", ".jpeg", ".bmp", ".tif", ".tiff"], StringComparer.OrdinalIgnoreCase);
+        var supported = new HashSet<string>([".pdf", ".png", ".jpg", ".jpeg", ".bmp", ".tif", ".tiff", ".webp"], StringComparer.OrdinalIgnoreCase);
         if (files.Length < 2) { StatusText = "合并至少需要两个文件；请选择文件或保留两个以上输入项。"; return; }
         if (files.Any(x => !supported.Contains(x.Extension))) { StatusText = "合并仅支持 PDF 和常见图片格式。"; return; }
-        if (!ConfirmRasterCompression()) return;
-        if (!TryCreatePdfOptions(files.Skip(1).Select(x => x.FullName).ToArray(), out PdfOptions options, out var error)) { StatusText = error; return; }
+        if (!ConfirmRasterCompression(files.Any(x => x.Extension.Equals(".pdf", StringComparison.OrdinalIgnoreCase)))) return;
+        if (!TryCreatePdfOptions(files.Skip(1).Select(x => x.FullName).ToArray(), out PdfOptions options, out var error, files.Any(x => x.Extension.Equals(".pdf", StringComparison.OrdinalIgnoreCase)))) { StatusText = error; return; }
         Enqueue(files[0].FullName, "pdf", options);
     }
     private void Cancel_Click(object sender, RoutedEventArgs e) { foreach (QueueRow row in QueueList.SelectedItems) _queue.Cancel(row.Item.Id); }
-    private void Retry_Click(object sender, RoutedEventArgs e) { foreach (var row in QueueItems.Where(x => x.Item.Status == ConversionStatus.Failed).ToArray()) { var displayTarget = row.Item.Request.Options is OcrOptions ? "可搜索 PDF (OCR)" : row.Item.Request.TargetFormat; var item = _queue.Enqueue(row.Item.Request); QueueItems.Add(new(item)); StatusText = $"已重试 {displayTarget} 任务。"; } }
+    private void Retry_Click(object sender, RoutedEventArgs e) { foreach (var row in QueueItems.Where(x => x.Item.Status is ConversionStatus.Failed or ConversionStatus.PartialSucceeded).ToArray()) { var item = AddQueueRequest(row.Item.Request); StatusText = $"已重试 {ConversionLabels.Target(item.Request)} 任务；已有结果将按原任务的重名策略处理。"; } }
+    private QueueItem AddQueueRequest(ConversionRequest request)
+    {
+        var item = _queue.Enqueue(request);
+        QueueItems.Add(new(item)); ResultsTabs.SelectedIndex = 0;
+        return item;
+    }
     private void Exit_Click(object sender, RoutedEventArgs e) => Close();
     private void OpenOutput_Click(object sender, RoutedEventArgs e)
     {
@@ -163,7 +191,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         {
             var selected = (QueueList.SelectedItem as QueueRow)?.Item;
             var output = selected?.Result?.OutputFiles.FirstOrDefault()
-                ?? QueueItems.LastOrDefault(x => x.Item.Status == ConversionStatus.Succeeded)?.Item.Result?.OutputFiles.FirstOrDefault();
+                ?? QueueItems.LastOrDefault(x => x.Item.Result?.OutputFiles.Count > 0)?.Item.Result?.OutputFiles.FirstOrDefault();
             var path = output is not null ? Path.GetDirectoryName(output)
                 : !string.IsNullOrWhiteSpace(OutputDirectory) ? Path.GetFullPath(OutputDirectory)
                 : InputFiles.FirstOrDefault() is { } input ? Path.Combine(input.DirectoryName!, "转换结果") : null;
@@ -198,7 +226,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         => OpenPdfToolsWindow();
     private void OpenPdfToolsWindow()
     {
-        var window = new PdfToolsWindow(request => { var item = _queue.Enqueue(request); QueueItems.Add(new(item)); }, string.IsNullOrWhiteSpace(OutputDirectory) ? null : OutputDirectory) { Owner = this };
+        var window = new PdfToolsWindow(request => AddQueueRequest(request), string.IsNullOrWhiteSpace(OutputDirectory) ? null : OutputDirectory) { Owner = this };
         window.ShowDialog();
     }
     private async void Detect_Click(object sender, RoutedEventArgs e) => await DetectEnginesAsync();
@@ -219,38 +247,68 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             var languages = SelectedOcrLanguage switch { "简体中文" => "chi_sim", "英文" => "eng", _ => "chi_sim+eng" };
             options = new OcrOptions(languages, EmptyToNull(OcrPageRange), dpi, OcrGrayscale); return true;
         }
-        if (target == "pdf") { var ok = TryCreatePdfOptions(null, out PdfOptions pdfOptions, out error); options = pdfOptions; return ok; }
-        if (!TryInt(ImageQuality, 1, 100, "图片质量", out var quality, out error) || !TryInt(RenderDpi, 72, 600, "渲染 DPI", out var dpiValue, out error)) return false;
-        options = Path.GetExtension(path).Equals(".pdf", StringComparison.OrdinalIgnoreCase)
-            ? new PdfRenderOptions(EmptyToNull(PdfPageRange), dpiValue, quality)
-            : new ImageOptions(quality, dpiValue);
+        if (target == "pdf")
+        {
+            if (!UsesPdfSettings(path)) return true;
+            var ok = TryCreatePdfOptions(null, out PdfOptions pdfOptions, out error, Path.GetExtension(path).Equals(".pdf", StringComparison.OrdinalIgnoreCase)); options = pdfOptions; return ok;
+        }
+        var quality = 90;
+        if (target is "jpg" or "jpeg" && !TryInt(ImageQuality, 1, 100, "图片质量", out quality, out error)) return false;
+        if (Path.GetExtension(path).Equals(".pdf", StringComparison.OrdinalIgnoreCase))
+        {
+            if (!TryInt(RenderDpi, 72, 600, "渲染 DPI", out var dpiValue, out error)) return false;
+            options = new PdfRenderOptions(EmptyToNull(PdfPageRange), dpiValue, quality);
+        }
+        else options = new ImageOptions(quality);
         return true;
     }
-    private bool TryCreatePdfOptions(IReadOnlyList<string>? additional, out PdfOptions options, out string error)
+    private bool TryCreatePdfOptions(IReadOnlyList<string>? additional, out PdfOptions options, out string error, bool hasPdf)
     {
         options = new PdfOptions();
-        if (!TryInt(CompressionDpi, 72, 300, "强力压缩 DPI", out var dpi, out error) || !TryInt(CompressionQuality, 20, 95, "JPEG 质量", out var quality, out error)) return false;
-        options = new PdfOptions(EmptyToNull(PdfPageRange), CompressPdf ? 6 : 0, EmptyToNull(PdfWatermark), ParseRotation(), additional, RasterCompressPdf, dpi, quality);
+        error = "";
+        var dpi = 144; var quality = 75;
+        if (hasPdf && RasterCompressPdf && (!TryInt(CompressionDpi, 72, 300, "强力压缩 DPI", out dpi, out error) || !TryInt(CompressionQuality, 20, 95, "JPEG 质量", out quality, out error))) return false;
+        options = new PdfOptions(hasPdf ? EmptyToNull(PdfPageRange) : null, CompressPdf ? 6 : 0, hasPdf ? EmptyToNull(PdfWatermark) : null, hasPdf ? ParseRotation() : 0, additional, hasPdf && RasterCompressPdf, dpi, quality);
         return true;
     }
     private int ParseRotation() => int.TryParse(SelectedRotation.TrimEnd('°'), out var value) ? value : 0;
-    private bool ConfirmRasterCompression() => !RasterCompressPdf || System.Windows.MessageBox.Show("强力压缩会把页面栅格化，原有可选文字、链接、批注和表单将无法保留。确定继续吗？", "确认强力压缩", MessageBoxButton.YesNo, MessageBoxImage.Warning) == MessageBoxResult.Yes;
+    private bool ConfirmRasterCompression(bool applies) => !applies || !RasterCompressPdf || ConfirmationWindow.Confirm(this, "强力压缩会把页面栅格化，原有可选文字、链接、批注和表单将无法保留。确定继续吗？", "确认强力压缩");
     private static string? EmptyToNull(string value) => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
     private static bool TryInt(string text, int min, int max, string name, out int value, out string error)
     {
         if (int.TryParse(text, out value) && value >= min && value <= max) { error = ""; return true; }
         error = $"{name} 必须是 {min}–{max} 之间的整数。"; return false;
     }
-    private void QueueChanged(object? sender, QueueItem item) => Dispatcher.Invoke(async () =>
+    private void QueueChanged(object? sender, QueueItem item)
     {
-        var row = QueueItems.FirstOrDefault(x => x.Item.Id == item.Id); row?.Refresh();
-        if (item.Result is not null && _recordedTasks.Add(item.Id))
+        if (item.Result is { } result)
         {
-            if (item.Status == ConversionStatus.Failed) ShowError($"{Path.GetFileName(item.Request.InputPath)}：{item.Result.ErrorMessage} 详情可在“任务队列”中查看。");
-            var entry = new HistoryEntry(DateTimeOffset.Now, item.Request.InputPath, item.Request.TargetFormat, item.Status, item.Result.ErrorMessage, item.Result.OutputFiles);
-            await _history.AppendAsync(entry); HistoryItems.Insert(0, new(entry));
+            lock (_historyGate)
+                if (_recordedTasks.Add(item.Id))
+                {
+                    var entry = new HistoryEntry(DateTimeOffset.Now, item.Request.InputPath, item.Request.TargetFormat, result.Status, result.ErrorMessage, result.OutputFiles, result.Warnings, item.Request);
+                    _historyWrites.RemoveAll(x => x.IsCompleted);
+                    _unsavedHistory.Add(entry);
+                    _historyWrites.Add(SaveHistoryAsync(entry));
+                }
         }
-    });
+        Dispatcher.InvokeAsync(() =>
+        {
+            QueueItems.FirstOrDefault(x => x.Item.Id == item.Id)?.Refresh();
+            if (!_exitInProgress && item.Status is ConversionStatus.Failed or ConversionStatus.PartialSucceeded)
+                ShowError($"{Path.GetFileName(item.Request.InputPath)}：{item.Result?.ErrorMessage} 详情可在“任务队列”中查看。");
+        });
+    }
+    private async Task SaveHistoryAsync(HistoryEntry entry)
+    {
+        try
+        {
+            await _history.AppendAsync(entry).ConfigureAwait(false);
+            lock (_historyGate) _unsavedHistory.Remove(entry);
+            await Dispatcher.InvokeAsync(() => HistoryItems.Insert(0, new(entry)));
+        }
+        catch (Exception ex) { DiagnosticLog.Write("history.save", ex); await Dispatcher.InvokeAsync(() => ShowError("转换历史保存失败：" + ex.Message)); }
+    }
     private async Task LoadHistoryAsync()
     {
         HistoryItems.Clear(); foreach (var entry in (await _history.LoadAsync()).Reverse()) HistoryItems.Add(new(entry));
@@ -264,18 +322,47 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     {
         if (HistoryList.SelectedItem is not HistoryRow row || !File.Exists(row.Entry.InputPath)) { StatusText = "原输入文件已不存在。"; return; }
         if (!InputFiles.Any(x => x.FullName.Equals(row.Entry.InputPath, StringComparison.OrdinalIgnoreCase))) InputFiles.Add(new(row.Entry.InputPath));
-        SelectedTarget = row.Entry.TargetFormat; StatusText = "历史任务已重新添加到输入列表。";
+        if (row.Entry.Request?.Options is OcrOptions ocr)
+        {
+            _quickAction = "ocr";
+            SelectedTarget = "可搜索 PDF (OCR)";
+            SelectedOcrLanguage = ocr.Languages switch { "chi_sim" => "简体中文", "eng" => "英文", _ => "中英混合" };
+            OcrPageRange = ocr.PageRange ?? ""; OcrDpi = ocr.Dpi.ToString(); OcrGrayscale = ocr.Grayscale; OnChanged(nameof(OcrGrayscale));
+            OutputDirectory = row.Entry.Request.OutputDirectory ?? "";
+            StatusText = "OCR 历史任务已重新添加，语言、页码、DPI 和灰度参数已恢复。";
+        }
+        else { SelectedTarget = row.Entry.TargetFormat; StatusText = "历史任务已重新添加到输入列表。"; }
     }
-    private void ClearHistory_Click(object sender, RoutedEventArgs e)
+    private void RerunHistory_Click(object sender, RoutedEventArgs e)
     {
-        if (System.Windows.MessageBox.Show("确定清空全部转换历史吗？此操作不会删除输出文件。", "清空历史", MessageBoxButton.YesNo, MessageBoxImage.Warning) != MessageBoxResult.Yes) return;
-        _history.Clear(); HistoryItems.Clear(); StatusText = "历史记录已清空。";
+        if (HistoryList.SelectedItem is not HistoryRow row || row.Entry.Request is not { } request) { ShowError("这条旧历史未保存任务参数，请重新添加后设置转换参数。"); return; }
+        if (!File.Exists(request.InputPath)) { ShowError("原输入文件已不存在。"); return; }
+        AddQueueRequest(request); StatusText = "已按历史中保存的参数重新运行任务。";
     }
-    private void OnClosing(object? sender, CancelEventArgs e)
+    private async void ClearHistory_Click(object sender, RoutedEventArgs e)
     {
-        if (!_queue.HasActiveItems) return;
-        if (System.Windows.MessageBox.Show("仍有转换任务正在运行。确定退出并取消这些任务吗？", "任务仍在运行", MessageBoxButton.YesNo, MessageBoxImage.Warning) == MessageBoxResult.No) e.Cancel = true;
-        else foreach (var row in QueueItems.Where(x => x.Item.Status is ConversionStatus.Waiting or ConversionStatus.Checking or ConversionStatus.Processing)) _queue.Cancel(row.Item.Id);
+        if (!ConfirmationWindow.Confirm(this, "确定清空全部转换历史吗？此操作不会删除输出文件。", "清空历史")) return;
+        Task[] writes; lock (_historyGate) writes = _historyWrites.ToArray();
+        await Task.WhenAll(writes);
+        await _history.ClearAsync(); HistoryItems.Clear(); StatusText = "历史记录已清空。";
+    }
+    private async void OnClosing(object? sender, CancelEventArgs e)
+    {
+        if (_allowClose) return;
+        e.Cancel = true;
+        if (_exitInProgress) return;
+        if (_queue.HasActiveItems && !ConfirmationWindow.Confirm(this, "仍有任务正在运行。确定取消任务、等待清理完成后退出吗？", "任务仍在运行")) return;
+        _exitInProgress = true; IsEnabled = false; StatusText = "正在取消任务并等待临时文件和转换进程清理…";
+        await System.Windows.Threading.Dispatcher.Yield(System.Windows.Threading.DispatcherPriority.Background);
+        await _queue.StopAsync();
+        Task[] writes; lock (_historyGate) writes = _historyWrites.ToArray();
+        await Task.WhenAll(writes);
+        HistoryEntry[] pending; lock (_historyGate) pending = _unsavedHistory.ToArray();
+        foreach (var entry in pending) await SaveHistoryAsync(entry);
+        lock (_historyGate)
+            if (_unsavedHistory.Count > 0) { _exitInProgress = false; ShowError("历史尚未保存，退出已暂停。请检查磁盘和历史目录权限后再次关闭窗口。"); return; }
+        _queue.Changed -= QueueChanged;
+        _allowClose = true; Close();
     }
     private void OnChanged([CallerMemberName] string? name = null) => PropertyChanged?.Invoke(this, new(name));
 }
@@ -285,19 +372,31 @@ public sealed class HistoryRow(HistoryEntry entry)
     public HistoryEntry Entry { get; } = entry;
     public string TimeText => Entry.Timestamp.LocalDateTime.ToString("yyyy-MM-dd HH:mm");
     public string FileName => Path.GetFileName(Entry.InputPath);
-    public string Target => Entry.TargetFormat.ToUpperInvariant();
-    public string StatusText => Entry.Status == ConversionStatus.Succeeded ? "成功" : Entry.Status == ConversionStatus.Cancelled ? "已取消" : "失败";
-    public string Detail => Entry.OutputFiles?.Count > 0 ? string.Join("；", Entry.OutputFiles) : Entry.Error ?? "";
+    public string Target => Entry.Request is { } request ? ConversionLabels.Target(request) : Entry.TargetFormat.ToUpperInvariant();
+    public string StatusText => ConversionLabels.Status(Entry.Status, Entry.Warnings?.Count > 0);
+    public string Detail => (Entry.OutputFiles?.Count > 0 ? string.Join("；", Entry.OutputFiles) + (Entry.Error is { Length: > 0 } ? "；" + Entry.Error : "") : Entry.Error ?? "")
+        + (Entry.Warnings?.Count > 0 ? "；警告：" + string.Join("；", Entry.Warnings) : "");
 }
 
 public sealed class QueueRow(QueueItem item) : INotifyPropertyChanged
 {
     public QueueItem Item { get; } = item;
     public string FileName => Path.GetFileName(Item.Request.InputPath);
-    public string Target => Item.Request.TargetFormat.ToUpperInvariant();
-    public string StatusText => Item.Status switch { ConversionStatus.Waiting => "等待", ConversionStatus.Checking => "检测", ConversionStatus.Processing => "处理中", ConversionStatus.Succeeded => "成功", ConversionStatus.Failed => "失败", _ => "已取消" };
+    public string Target => ConversionLabels.Target(Item.Request);
+    public string StatusText => ConversionLabels.Status(Item.Status, Item.Result?.Warnings.Count > 0);
     public string ProgressText => $"{Item.Progress:0}%";
     public string Message => Item.Message;
     public event PropertyChangedEventHandler? PropertyChanged;
     public void Refresh() { foreach (var name in new[] { nameof(StatusText), nameof(ProgressText), nameof(Message) }) PropertyChanged?.Invoke(this, new(name)); }
+}
+
+public static class ConversionLabels
+{
+    public static string Target(ConversionRequest request) => request.Options switch { OcrOptions => "可搜索 PDF (OCR)", PdfSplitOptions => "PDF 拆分", _ => request.TargetFormat.ToUpperInvariant() };
+    public static string Status(ConversionStatus status, bool warnings) => status switch
+    {
+        ConversionStatus.Waiting => "等待", ConversionStatus.Checking => "检测", ConversionStatus.Processing => "处理中",
+        ConversionStatus.Succeeded => warnings ? "成功（有警告）" : "成功", ConversionStatus.PartialSucceeded => "部分成功",
+        ConversionStatus.Cancelled => "已取消", _ => "失败"
+    };
 }

@@ -1,4 +1,4 @@
-﻿param([string]$Version = "1.0.5", [string]$Runtime = "win-x64")
+param([string]$Version = "1.0.6", [string]$Runtime = "win-x64")
 
 $ErrorActionPreference = "Stop"
 $projectRoot = $PSScriptRoot

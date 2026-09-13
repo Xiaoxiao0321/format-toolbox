@@ -20,6 +20,7 @@ public static class ErrorCodes
     public const string DiskFull = "DISK_FULL";
     public const string InvalidOrEncrypted = "INVALID_OR_ENCRYPTED";
     public const string Cancelled = "CANCELLED";
+    public const string PartialOutput = "PARTIAL_OUTPUT";
     public const string Timeout = "TIMEOUT";
     public const string EngineFailure = "ENGINE_FAILURE";
 }

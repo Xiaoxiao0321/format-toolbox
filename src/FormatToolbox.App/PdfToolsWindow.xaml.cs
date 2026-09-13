@@ -16,7 +16,11 @@ public partial class PdfToolsWindow : Window, INotifyPropertyChanged
 {
     private readonly Action<ConversionRequest> _enqueue;
     private readonly PdfPreviewService _preview = new();
-    private readonly PdfSplitService _split = new();
+    private CancellationTokenSource? _previewCancellation;
+    private readonly List<Task> _previewTasks = [];
+    private bool _closingPreview, _allowClose;
+    private bool _previewReady;
+    public bool PreviewReady { get => _previewReady; private set { _previewReady = value; OnChanged(); } }
     private readonly string? _defaultOutputDirectory;
     private string _inputPath = "", _statusText = "请选择一个 PDF 文件。", _selectedSplitMode = "逐页拆分", _splitParameter = "2", _outputBaseName = "拆分结果";
     public ObservableCollection<PdfPageRow> Pages { get; } = [];
@@ -31,29 +35,48 @@ public partial class PdfToolsWindow : Window, INotifyPropertyChanged
     public PdfToolsWindow(Action<ConversionRequest> enqueue, string? defaultOutputDirectory)
     {
         InitializeComponent(); DataContext = this; _enqueue = enqueue; _defaultOutputDirectory = defaultOutputDirectory;
+        Closing += OnClosing;
+        WindowSizing.Attach(this);
     }
 
     private async void ChoosePdf_Click(object sender, RoutedEventArgs e)
     {
         var dialog = new Microsoft.Win32.OpenFileDialog { Filter = "PDF 文件|*.pdf" };
         if (dialog.ShowDialog(this) != true) return;
+        _previewCancellation?.Cancel();
         InputPath = dialog.FileName; OutputBaseName = Path.GetFileNameWithoutExtension(InputPath); Pages.Clear();
+        PreviewReady = false;
+        var cancellation = new CancellationTokenSource(); _previewCancellation = cancellation;
+        _previewTasks.RemoveAll(x => x.IsCompleted);
+        var task = LoadPreviewAsync(InputPath, cancellation); _previewTasks.Add(task);
+        await task;
+    }
+
+    private async Task LoadPreviewAsync(string path, CancellationTokenSource cancellation)
+    {
         try
         {
-            var count = _preview.GetPageCount(InputPath);
+            var token = cancellation.Token;
+            var count = await _preview.GetPageCountAsync(path, token);
             for (var i = 0; i < count; i++)
             {
+                token.ThrowIfCancellationRequested();
                 StatusText = $"正在生成缩略图 {i + 1}/{count}…";
-                var bytes = await _preview.RenderThumbnailAsync(InputPath, i);
+                var bytes = await _preview.RenderThumbnailAsync(path, i, token);
+                token.ThrowIfCancellationRequested();
                 Pages.Add(new(i + 1, ToBitmap(bytes)));
             }
+            PreviewReady = true;
             StatusText = $"已加载 {count} 页。拖拽缩略图可以调整顺序。";
         }
-        catch (Exception ex) { StatusText = "无法读取 PDF：" + ex.Message; }
+        catch (OperationCanceledException) { }
+        catch (Exception ex) { if (_previewCancellation == cancellation) StatusText = "无法读取 PDF：" + ex.Message; }
+        finally { if (_previewCancellation == cancellation) _previewCancellation = null; cancellation.Dispose(); }
     }
 
     private void SaveReordered_Click(object sender, RoutedEventArgs e)
     {
+        if (!PreviewReady) { StatusText = "请等待页面预览加载完成。"; return; }
         if (!Ready(out var directory)) return;
         var order = Pages.Where(x => x.Keep).Select(x => x.OriginalPageNumber).ToArray();
         if (order.Length == 0) { StatusText = "至少保留一个页面。"; return; }
@@ -61,22 +84,28 @@ public partial class PdfToolsWindow : Window, INotifyPropertyChanged
         StatusText = "页面整理任务已加入主窗口队列。";
     }
 
-    private async void Split_Click(object sender, RoutedEventArgs e)
+    private void Split_Click(object sender, RoutedEventArgs e)
     {
         if (!Ready(out var directory)) return;
         try
         {
-            IsEnabled = false; StatusText = "正在拆分 PDF…"; IReadOnlyList<string> outputs;
-            if (SelectedSplitMode == "指定范围") outputs = await _split.SplitRangesAsync(InputPath, directory, CleanName(OutputBaseName), SplitParameter);
-            else
-            {
-                var pages = SelectedSplitMode == "逐页拆分" ? 1 : int.TryParse(SplitParameter, out var value) && value > 0 ? value : throw new FormatException("每 N 页必须填写大于 0 的整数。");
-                outputs = await _split.SplitEveryAsync(InputPath, directory, CleanName(OutputBaseName), pages);
-            }
-            StatusText = $"拆分完成，共生成 {outputs.Count} 个文件。";
+            var pages = SelectedSplitMode is "逐页拆分" or "指定范围" ? 1 : int.TryParse(SplitParameter, out var value) && value > 0 ? value : throw new FormatException("每 N 页必须填写大于 0 的整数。");
+            if (SelectedSplitMode == "指定范围" && string.IsNullOrWhiteSpace(SplitParameter)) throw new FormatException("请填写拆分页码范围，例如 1-3;4-6。");
+            _enqueue(new(InputPath, "pdf", directory, Options: new PdfSplitOptions(pages, SelectedSplitMode == "指定范围" ? SplitParameter : null), OutputFileName: CleanName(OutputBaseName)));
+            StatusText = "拆分任务已加入主窗口队列；可关闭此窗口查看进度、取消或重试。";
         }
         catch (Exception ex) { StatusText = "拆分失败：" + ex.Message; }
-        finally { IsEnabled = true; }
+    }
+
+    private async void OnClosing(object? sender, CancelEventArgs e)
+    {
+        if (_allowClose) return;
+        e.Cancel = true;
+        if (_closingPreview) return;
+        _closingPreview = true; IsEnabled = false; _previewCancellation?.Cancel();
+        await System.Windows.Threading.Dispatcher.Yield(System.Windows.Threading.DispatcherPriority.Background);
+        await Task.WhenAll(_previewTasks);
+        _allowClose = true; Close();
     }
 
     private void MoveUp_Click(object sender, RoutedEventArgs e) { if (PageList.SelectedItem is PdfPageRow row) Move(row, Pages.IndexOf(row) - 1); }

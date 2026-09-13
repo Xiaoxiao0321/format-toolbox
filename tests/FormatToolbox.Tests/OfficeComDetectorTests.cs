@@ -7,6 +7,12 @@ namespace FormatToolbox.Tests;
 public sealed class OfficeComDetectorTests
 {
     [Theory]
+    [InlineData("\"C:\\Program Files\\Kingsoft\\WPS Office\\office6\\et.exe\" /automation", true)]
+    [InlineData("C:\\Apps\\office6\\et.exe /automation", true)]
+    [InlineData("\"C:\\Program Files\\Microsoft Office\\root\\Office16\\EXCEL.EXE\" /automation", false)]
+    public void Recognizes_real_WPS_server_for_Excel_compatibility_registration(string server, bool wps)
+        => Assert.Equal(wps, new OfficeComRegistration(Guid.NewGuid(), "Excel.Application", RegistryView.Registry64, server).IsWps);
+    [Theory]
     [InlineData(RegistryView.Registry32, "kwps.application")]
     [InlineData(RegistryView.Registry64, "kwps.application")]
     [InlineData(RegistryView.Registry32, "wps.application.1")]
