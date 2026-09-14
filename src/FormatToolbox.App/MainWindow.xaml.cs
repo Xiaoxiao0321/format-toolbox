@@ -15,6 +15,31 @@ namespace FormatToolbox.App;
 
 public partial class MainWindow : Window, INotifyPropertyChanged
 {
+    private void Content_PreviewMouseWheel(object sender, System.Windows.Input.MouseWheelEventArgs e)
+    {
+        // Route to the nearest viewer that can move in this direction. At a list
+        // boundary the enclosing page takes over, without replaying input events.
+        var source = e.OriginalSource as DependencyObject;
+        while (source != null)
+        {
+            if (source is System.Windows.Controls.ComboBox) return;
+            if (source is System.Windows.Controls.ScrollViewer viewer &&
+                viewer.ScrollableHeight > 0 &&
+                (e.Delta > 0 ? viewer.VerticalOffset > 0 : viewer.VerticalOffset < viewer.ScrollableHeight))
+            {
+                var lines = SystemParameters.WheelScrollLines;
+                if (lines == 0) return;
+                var distance = lines < 0 ? viewer.ViewportHeight : lines * 16.0;
+                viewer.ScrollToVerticalOffset(viewer.VerticalOffset - e.Delta / 120.0 * distance);
+                e.Handled = true;
+                return;
+            }
+            source = source is System.Windows.Media.Visual or System.Windows.Media.Media3D.Visual3D
+                ? System.Windows.Media.VisualTreeHelper.GetParent(source)
+                : LogicalTreeHelper.GetParent(source);
+        }
+    }
+
     private readonly ConversionRegistry _registry;
     private readonly ConversionQueue _queue;
     private readonly HistoryStore _history;

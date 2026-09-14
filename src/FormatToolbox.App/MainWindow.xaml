@@ -7,7 +7,7 @@
     <Border DockPanel.Dock="Top" Visibility="{Binding ErrorVisibility}" CornerRadius="{StaticResource NoticeRadius}" Background="{StaticResource ErrorSurfaceBrush}" BorderBrush="{StaticResource ErrorBrush}" BorderThickness="1" Padding="10" Margin="0,8,0,0">
       <DockPanel><Button Style="{StaticResource BaseButton}" DockPanel.Dock="Right" Content="关闭提示" Click="DismissError_Click" Margin="10,0,0,0"/><TextBlock Text="{Binding ErrorText}" Foreground="{StaticResource ErrorBrush}" TextWrapping="Wrap" VerticalAlignment="Center"/></DockPanel>
     </Border>
-    <ScrollViewer x:Name="MainContentScroll" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto" Margin="0,8,0,0">
+    <ScrollViewer x:Name="MainContentScroll" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto" Margin="0,8,0,0" PreviewMouseWheel="Content_PreviewMouseWheel">
     <Grid Width="{Binding ViewportWidth, ElementName=MainContentScroll}" MinWidth="600">
       <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="218"/><RowDefinition Height="Auto"/><RowDefinition Height="280"/></Grid.RowDefinitions>
       <Expander x:Name="QuickStartExpander" Grid.Row="0" IsExpanded="True" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" Padding="7">

@@ -386,6 +386,10 @@
     </Setter>
   </Style>
   <Style TargetType="ListView">
+    <Setter Property="ScrollViewer.CanContentScroll" Value="True" />
+    <Setter Property="VirtualizingPanel.IsVirtualizing" Value="True" />
+    <Setter Property="VirtualizingPanel.VirtualizationMode" Value="Recycling" />
+    <Setter Property="VirtualizingPanel.ScrollUnit" Value="Pixel" />
     <Setter Property="Background" Value="{StaticResource SurfaceBrush}" />
     <Setter Property="Foreground" Value="{StaticResource TextBrush}" />
     <Setter Property="BorderBrush" Value="{StaticResource BorderBrush}" />
