@@ -1,8 +1,17 @@
 # 格式转换工具箱
 
+## 1.0.7 清透莫兰迪青蓝界面
+
+当前安装包为 `artifacts/installer/格式转换工具箱-Setup-1.0.7-win-x64.exe`，完整更新说明见 [RELEASE_NOTES.md](RELEASE_NOTES.md)。
+
+- 统一主窗口、PDF 页面工具、确认、反馈和关于窗口的配色、字体、圆角与控件交互状态。
+- 补充线条功能图标，同步应用、任务栏及安装卸载图标。
+- 修整输入文件区、合并按钮和确认弹窗尺寸，避免裁切并支持长提示滚动。
+- 保留现有转换功能、布局结构和原生文件选择框；详细验证边界见 [主题记录](docs/ui-theme.md)。
+
 ## 1.0.6 转换可靠性与兼容性更新
 
-完整更新说明见 [RELEASE_NOTES.md](RELEASE_NOTES.md)。当前安装包为 `artifacts/installer/格式转换工具箱-Setup-1.0.6-win-x64.exe`。
+完整更新说明见 [RELEASE_NOTES.md](RELEASE_NOTES.md)。该版本安装包为 `artifacts/installer/格式转换工具箱-Setup-1.0.6-win-x64.exe`。
 
 - 添加文件默认筛选包含 PDF，并提供单独的 PDF 筛选入口。
 - PDF 导图和 OCR 页面渲染在后台执行，进度通过主窗口刷新；取消在当前页面处理结束后生效。PDF 导出 JPEG 使用所设质量。

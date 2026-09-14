@@ -1,9 +1,10 @@
-<Window x:Class="FormatToolbox.App.ConfirmationWindow" xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" Width="520" Height="300" MinWidth="300" MinHeight="180" WindowStartupLocation="CenterOwner" ShowInTaskbar="False">
+<Window Style="{DynamicResource ThemeWindow}" x:Class="FormatToolbox.App.ConfirmationWindow" xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" xmlns:local="clr-namespace:FormatToolbox.App" Width="520" Height="300" MinWidth="300" MinHeight="260" WindowStartupLocation="CenterOwner" ShowInTaskbar="False">
+  <Window.Resources><ResourceDictionary Source="Themes/Light.xaml"/></Window.Resources>
   <DockPanel Margin="16">
     <WrapPanel DockPanel.Dock="Bottom" HorizontalAlignment="Right" Margin="0,12,0,0">
-      <Button x:Name="ConfirmButton" Content="确定" IsDefault="True" MinWidth="85" Click="Confirm_Click" Padding="12,5" Margin="3"/>
-      <Button x:Name="CancelButton" Content="取消" IsCancel="True" MinWidth="85" Padding="12,5" Margin="3"/>
+      <Button Style="{StaticResource PrimaryButton}" local:ThemeIcon.Data="{StaticResource CheckIcon}" x:Name="ConfirmButton" Content="确定" IsDefault="True" MinWidth="85" Click="Confirm_Click" Padding="12,5" Margin="3"/>
+      <Button Style="{StaticResource BaseButton}" x:Name="CancelButton" Content="取消" IsCancel="True" MinWidth="85" Padding="12,5" Margin="3"/>
     </WrapPanel>
-    <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"><TextBlock x:Name="MessageText" TextWrapping="Wrap" FontSize="14"/></ScrollViewer>
+    <Border Background="{StaticResource SurfaceBrush}" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="{StaticResource CardRadius}" Padding="12"><DockPanel><TextBlock DockPanel.Dock="Top" Text="{Binding Title, RelativeSource={RelativeSource AncestorType=Window}}" Style="{StaticResource DialogTitle}" Margin="0,0,0,12"/><ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"><TextBlock x:Name="MessageText" TextWrapping="Wrap" FontSize="14"/></ScrollViewer></DockPanel></Border>
   </DockPanel>
 </Window>
