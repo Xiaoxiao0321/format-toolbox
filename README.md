@@ -1,5 +1,9 @@
 # 格式转换工具箱
 
+## 1.0.9 主窗口空间与历史操作优化
+
+调整工作区和结果区的默认比例与间距，历史操作按钮在列表右侧竖排。安装包位于 `artifacts/installer/格式转换工具箱-Setup-1.0.9-win-x64.exe`，详见 [RELEASE_NOTES.md](RELEASE_NOTES.md)。
+
 ## 1.0.8 主窗口布局更新
 
 主窗口支持宽屏双栏和窄屏纵向排列，设置栏与文件区可调整尺寸，常用转换入口集中在顶部。当前安装包为 `artifacts/installer/格式转换工具箱-Setup-1.0.8-win-x64.exe`，详见 [RELEASE_NOTES.md](RELEASE_NOTES.md)。
