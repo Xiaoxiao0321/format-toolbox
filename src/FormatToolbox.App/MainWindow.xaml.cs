@@ -4,6 +4,8 @@ using System.Diagnostics;
 using System.IO;
 using System.Runtime.CompilerServices;
 using System.Windows;
+using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
 using System.Windows.Interop;
 using FormatToolbox.Core;
 using FormatToolbox.Infrastructure;
@@ -15,6 +17,28 @@ namespace FormatToolbox.App;
 
 public partial class MainWindow : Window, INotifyPropertyChanged
 {
+    private void Content_PreviewMouseWheel(object sender, System.Windows.Input.MouseWheelEventArgs e)
+    {
+        var source = e.OriginalSource as DependencyObject;
+        while (source != null)
+        {
+            if (source is System.Windows.Controls.ComboBox) return;
+            if (source is ScrollViewer viewer &&
+                viewer.ScrollableHeight > 0 &&
+                (e.Delta > 0 ? viewer.VerticalOffset > 0 : viewer.VerticalOffset < viewer.ScrollableHeight))
+            {
+                var lines = SystemParameters.WheelScrollLines;
+                if (lines == 0) return;
+                var distance = lines < 0 ? viewer.ViewportHeight : lines * 16.0;
+                viewer.ScrollToVerticalOffset(viewer.VerticalOffset - e.Delta / 120.0 * distance);
+                e.Handled = true;
+                return;
+            }
+            source = source is System.Windows.Media.Visual or System.Windows.Media.Media3D.Visual3D
+                ? System.Windows.Media.VisualTreeHelper.GetParent(source)
+                : LogicalTreeHelper.GetParent(source);
+        }
+    }
     private readonly ConversionRegistry _registry;
     private readonly ConversionQueue _queue;
     private readonly HistoryStore _history;
@@ -24,7 +48,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private readonly List<HistoryEntry> _unsavedHistory = [];
     private bool _exitInProgress, _allowClose;
     private string _selectedTarget = "pdf", _outputDirectory = "", _statusText = "就绪";
-    private string _quickGuideText = "选择上方功能即可切换到对应设置；也可以直接拖入文件，再从“目标格式”中选择输出。";
+    private string _quickGuideText = "选择顶部功能后在此调整参数；也可以先拖入文件，再选择目标格式。";
     private string _errorText = "";
     public string ErrorText { get => _errorText; private set { _errorText = value; OnChanged(); OnChanged(nameof(ErrorVisibility)); } }
     public Visibility ErrorVisibility => string.IsNullOrEmpty(ErrorText) ? Visibility.Collapsed : Visibility.Visible;
@@ -33,6 +57,10 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private string _imageQuality = "90", _renderDpi = "144", _pdfPageRange = "", _pdfWatermark = "", _ocrPageRange = "", _ocrDpi = "300", _compressionDpi = "144", _compressionQuality = "75", _mergeFileName = "";
     private string _selectedRotation = "0°", _selectedOcrLanguage = "中英混合";
     private string? _quickAction;
+    private bool _isNarrowLayout;
+    private double _savedSettingsWidth = 320;
+    private GridLength _wideWorkLength = new(7, GridUnitType.Star), _wideResultsLength = new(3, GridUnitType.Star);
+    private double _dragWorkHeight, _dragTotalHeight;
     private bool _compressPdf = true, _rasterCompressPdf;
     public bool OcrGrayscale { get; set; }
     public ObservableCollection<FileInfo> InputFiles { get; } = [];
@@ -41,7 +69,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     public string[] TargetFormats { get; } = ["pdf", "可搜索 PDF (OCR)", "png", "jpg", "bmp", "tiff"];
     public string[] RotationChoices { get; } = ["0°", "90°", "180°", "270°"];
     public string[] OcrLanguages { get; } = ["中英混合", "简体中文", "英文"];
-    public string SelectedTarget { get => _selectedTarget; set { _selectedTarget = value; OnChanged(); NotifySettingsChanged(); } }
+    public string SelectedTarget { get => _selectedTarget; set { if (_selectedTarget != value) AdvancedSettingsExpander.IsExpanded = false; _selectedTarget = value; OnChanged(); NotifySettingsChanged(); } }
     public string OutputDirectory { get => _outputDirectory; set { _outputDirectory = value; OnChanged(); } }
     public string StatusText { get => _statusText; set { _statusText = value; OnChanged(); } }
     public string QuickGuideText { get => _quickGuideText; set { _quickGuideText = value; OnChanged(); } }
@@ -115,6 +143,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private void QuickAction_Click(object sender, RoutedEventArgs e)
     {
         var action = (sender as FrameworkElement)?.Tag as string;
+        if (_quickAction != action) AdvancedSettingsExpander.IsExpanded = false;
         _quickAction = action;
         switch (action)
         {
@@ -149,6 +178,89 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
         StatusText = QuickGuideText;
         NotifySettingsChanged();
+    }
+    private void MoreActions_Click(object sender, RoutedEventArgs e)
+    {
+        if (MoreActionsButton.ContextMenu is not { } menu) return;
+        menu.PlacementTarget = MoreActionsButton;
+        menu.Placement = PlacementMode.Bottom;
+        menu.IsOpen = true;
+    }
+    private void MainContentScroll_SizeChanged(object sender, SizeChangedEventArgs e) => UpdateMainLayout();
+    private void WorkSplitter_DragStarted(object sender, DragStartedEventArgs e)
+        => _savedSettingsWidth = Math.Clamp(SettingsColumn.ActualWidth, 270, 420);
+    private void WorkSplitter_DragDelta(object sender, DragDeltaEventArgs e)
+    {
+        if (_isNarrowLayout) return;
+        var maximum = Math.Max(270, Math.Min(420, WorkLayout.ActualWidth - FilesColumn.MinWidth - SettingsSplitterColumn.ActualWidth));
+        _savedSettingsWidth = Math.Clamp(_savedSettingsWidth - e.HorizontalChange, 270, maximum);
+        SettingsColumn.Width = new GridLength(_savedSettingsWidth);
+        e.Handled = true;
+    }
+    private void ResultsSplitter_DragStarted(object sender, DragStartedEventArgs e)
+    {
+        _dragWorkHeight = WorkRow.ActualHeight;
+        _dragTotalHeight = WorkRow.ActualHeight + ResultsRow.ActualHeight;
+    }
+    private void ResultsSplitter_DragDelta(object sender, DragDeltaEventArgs e)
+    {
+        if (_dragTotalHeight <= 0) ResultsSplitter_DragStarted(sender, new DragStartedEventArgs(0, 0));
+        var minimumResults = ResultsRow.MinHeight;
+        if (_dragTotalHeight < WorkRow.MinHeight + minimumResults) return;
+        _dragWorkHeight = Math.Clamp(_dragWorkHeight + e.VerticalChange, WorkRow.MinHeight, _dragTotalHeight - minimumResults);
+        WorkRow.Height = new GridLength(_dragWorkHeight, GridUnitType.Star);
+        ResultsRow.Height = new GridLength(_dragTotalHeight - _dragWorkHeight, GridUnitType.Star);
+        e.Handled = true;
+    }
+    private void UpdateMainLayout()
+    {
+        if (MainLayout is null || WorkLayout is null) return;
+        // ViewportWidth can still describe the previous measure during SizeChanged.
+        var viewportWidth = MainContentScroll.ActualWidth - SystemParameters.VerticalScrollBarWidth;
+        var viewportHeight = MainContentScroll.ActualHeight - SystemParameters.HorizontalScrollBarHeight;
+        if (viewportWidth <= 0 || viewportHeight <= 0) return;
+        var narrow = MainContentScroll.ActualWidth < 980;
+        if (narrow != _isNarrowLayout)
+        {
+            if (narrow)
+            {
+                _wideWorkLength = WorkRow.Height; _wideResultsLength = ResultsRow.Height;
+                WorkRow.Height = new GridLength(7, GridUnitType.Star);
+                ResultsRow.Height = new GridLength(3, GridUnitType.Star);
+                ResultsRow.MinHeight = 215;
+                if (SettingsColumn.ActualWidth >= 270) _savedSettingsWidth = Math.Clamp(SettingsColumn.ActualWidth, 270, 420);
+                SettingsColumn.MinWidth = 0; SettingsColumn.MaxWidth = double.PositiveInfinity; SettingsColumn.Width = new GridLength(0);
+                SettingsSplitterColumn.Width = new GridLength(0);
+                FilesColumn.MinWidth = 0; FileGroup.MinWidth = 0;
+                SettingsPanel.MinWidth = 0; SettingsPanel.MaxWidth = double.PositiveInfinity;
+                Grid.SetColumn(SettingsPanel, 0); Grid.SetRow(SettingsPanel, 0); Grid.SetRowSpan(SettingsPanel, 1);
+                Grid.SetRow(FileGroup, 2); Grid.SetRowSpan(FileGroup, 1); FileGroup.Margin = new Thickness(0);
+                WorkSplitter.Visibility = Visibility.Collapsed;
+                SettingsStackRow.Height = new GridLength(285);
+                NarrowGapRow.Height = new GridLength(8);
+            }
+            else
+            {
+                WorkRow.Height = _wideWorkLength; ResultsRow.Height = _wideResultsLength;
+                ResultsRow.MinHeight = 185;
+                SettingsStackRow.Height = new GridLength(0); NarrowGapRow.Height = new GridLength(0);
+                SettingsColumn.MinWidth = 270; SettingsColumn.MaxWidth = 420; SettingsColumn.Width = new GridLength(_savedSettingsWidth);
+                SettingsSplitterColumn.Width = new GridLength(8);
+                FilesColumn.MinWidth = 520; FileGroup.MinWidth = 520;
+                SettingsPanel.MinWidth = 270; SettingsPanel.MaxWidth = 420;
+                Grid.SetColumn(SettingsPanel, 2); Grid.SetRow(SettingsPanel, 0); Grid.SetRowSpan(SettingsPanel, 3);
+                Grid.SetRow(FileGroup, 0); Grid.SetRowSpan(FileGroup, 3); FileGroup.Margin = new Thickness(0, 0, 6, 0);
+                WorkSplitter.Visibility = Visibility.Visible;
+            }
+            _isNarrowLayout = narrow;
+        }
+        MainLayout.MinHeight = narrow ? 1000 : 650;
+        MainLayout.Width = Math.Max(560, viewportWidth);
+        MainLayout.Height = Math.Max(MainLayout.MinHeight, viewportHeight);
+    }
+    private void InputList_SizeChanged(object sender, SizeChangedEventArgs e)
+    {
+        if (InputPathColumn is not null) InputPathColumn.Width = Math.Max(180, e.NewSize.Width - 315);
     }
     private void Start_Click(object sender, RoutedEventArgs e)
     {
@@ -219,7 +331,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         WindowStartupLocation = WindowStartupLocation.Manual;
         Left = area.Left + (area.Width - Width) / 2;
         Top = area.Top + (area.Height - Height) / 2;
-        QuickStartExpander.IsExpanded = area.Height >= 800 && area.Width >= 1000;
+        UpdateMainLayout();
     }
     private void OpenLogs_Click(object sender, RoutedEventArgs e) { Directory.CreateDirectory(DiagnosticLog.DirectoryPath); Process.Start(new ProcessStartInfo(DiagnosticLog.DirectoryPath) { UseShellExecute = true }); }
     private void OpenPdfTools_Click(object sender, RoutedEventArgs e)

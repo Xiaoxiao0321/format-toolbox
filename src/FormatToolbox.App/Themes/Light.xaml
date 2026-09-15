@@ -205,6 +205,8 @@
     </Setter>
   </Style>
   <Style TargetType="ComboBox">
+    <Setter Property="FontFamily" Value="{StaticResource UiFont}" />
+    <Setter Property="FontSize" Value="14" />
     <Setter Property="Background" Value="{StaticResource SurfaceBrush}" />
     <Setter Property="Foreground" Value="{StaticResource TextBrush}" />
     <Setter Property="BorderBrush" Value="{StaticResource BorderBrush}" />
@@ -254,6 +256,8 @@
     </Setter>
   </Style>
   <Style TargetType="ComboBoxItem">
+    <Setter Property="FontFamily" Value="{StaticResource UiFont}" />
+    <Setter Property="FontSize" Value="14" />
     <Setter Property="Padding" Value="8,6" />
     <Setter Property="Foreground" Value="{StaticResource TextBrush}" />
     <Setter Property="Template">
@@ -386,6 +390,10 @@
     </Setter>
   </Style>
   <Style TargetType="ListView">
+    <Setter Property="ScrollViewer.CanContentScroll" Value="True" />
+    <Setter Property="VirtualizingPanel.IsVirtualizing" Value="True" />
+    <Setter Property="VirtualizingPanel.VirtualizationMode" Value="Recycling" />
+    <Setter Property="VirtualizingPanel.ScrollUnit" Value="Pixel" />
     <Setter Property="Background" Value="{StaticResource SurfaceBrush}" />
     <Setter Property="Foreground" Value="{StaticResource TextBrush}" />
     <Setter Property="BorderBrush" Value="{StaticResource BorderBrush}" />
@@ -508,7 +516,7 @@
             </Trigger>
             <Trigger Property="IsSelected" Value="True">
               <Setter TargetName="Chrome" Property="Background" Value="{StaticResource SelectionBrush}" />
-              <Setter Property="FontWeight" Value="SemiBold" />
+              <Setter TargetName="Chrome" Property="TextElement.FontWeight" Value="SemiBold" />
             </Trigger>
             <Trigger Property="IsEnabled" Value="False">
               <Setter Property="Foreground" Value="{StaticResource MutedBrush}" />
@@ -524,7 +532,46 @@
     <Setter Property="Background" Value="{StaticResource WindowBrush}" />
     <Setter Property="Foreground" Value="{StaticResource TextBrush}" />
   </Style>
-  <Style TargetType="MenuItem">
+  <Style x:Key="LayoutThumb" TargetType="Thumb">
+    <Setter Property="Background" Value="{StaticResource BorderBrush}" />
+    <Setter Property="FocusVisualStyle" Value="{StaticResource KeyboardFocus}" />
+    <Setter Property="Template">
+      <Setter.Value>
+        <ControlTemplate TargetType="Thumb">
+          <Border x:Name="Chrome" Background="{TemplateBinding Background}" CornerRadius="4">
+            <Border Width="3" Height="3" Background="{StaticResource IconBrush}" CornerRadius="2" HorizontalAlignment="Center" VerticalAlignment="Center" />
+          </Border>
+          <ControlTemplate.Triggers>
+            <Trigger Property="IsMouseOver" Value="True">
+              <Setter TargetName="Chrome" Property="Background" Value="{StaticResource SelectionBrush}" />
+            </Trigger>
+            <Trigger Property="IsDragging" Value="True">
+              <Setter TargetName="Chrome" Property="Background" Value="{StaticResource IconBrush}" />
+            </Trigger>
+          </ControlTemplate.Triggers>
+        </ControlTemplate>
+      </Setter.Value>
+    </Setter>
+  </Style>
+  <Style x:Key="ThemeContextMenu" TargetType="ContextMenu">
+    <Setter Property="FontFamily" Value="{StaticResource UiFont}" />
+    <Setter Property="FontSize" Value="14" />
+    <Setter Property="Foreground" Value="{StaticResource TextBrush}" />
+    <Setter Property="Background" Value="{StaticResource SurfaceBrush}" />
+    <Setter Property="BorderBrush" Value="{StaticResource BorderBrush}" />
+    <Setter Property="Padding" Value="5" />
+    <Setter Property="Template">
+      <Setter.Value>
+        <ControlTemplate TargetType="ContextMenu">
+          <Border Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="1" CornerRadius="8" Padding="{TemplateBinding Padding}">
+            <ItemsPresenter KeyboardNavigation.DirectionalNavigation="Cycle" />
+          </Border>
+        </ControlTemplate>
+      </Setter.Value>
+    </Setter>
+  </Style>
+  <Style TargetType="ContextMenu" BasedOn="{StaticResource ThemeContextMenu}" />
+  <Style x:Key="ThemeMenuItem" TargetType="MenuItem">
     <Setter Property="FontFamily" Value="{StaticResource UiFont}" />
     <Setter Property="FontSize" Value="14" />
     <Setter Property="Foreground" Value="{StaticResource TextBrush}" />
@@ -564,6 +611,7 @@
       </Setter.Value>
     </Setter>
   </Style>
+  <Style TargetType="MenuItem" BasedOn="{StaticResource ThemeMenuItem}" />
   <Style TargetType="Separator">
     <Setter Property="Margin" Value="3,4" />
     <Setter Property="Template">

@@ -1,5 +1,9 @@
 # 格式转换工具箱
 
+## 1.0.8 主窗口布局更新
+
+主窗口支持宽屏双栏和窄屏纵向排列，设置栏与文件区可调整尺寸，常用转换入口集中在顶部。当前安装包为 `artifacts/installer/格式转换工具箱-Setup-1.0.8-win-x64.exe`，详见 [RELEASE_NOTES.md](RELEASE_NOTES.md)。
+
 ## 1.0.7 清透莫兰迪青蓝界面
 
 当前安装包为 `artifacts/installer/格式转换工具箱-Setup-1.0.7-win-x64.exe`，完整更新说明见 [RELEASE_NOTES.md](RELEASE_NOTES.md)。
