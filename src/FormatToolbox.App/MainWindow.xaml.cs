@@ -59,7 +59,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private string? _quickAction;
     private bool _isNarrowLayout;
     private double _savedSettingsWidth = 320;
-    private GridLength _wideWorkLength = new(7, GridUnitType.Star), _wideResultsLength = new(3, GridUnitType.Star);
+    private GridLength _wideWorkLength = new(6.4, GridUnitType.Star), _wideResultsLength = new(3.6, GridUnitType.Star);
     private double _dragWorkHeight, _dragTotalHeight;
     private bool _compressPdf = true, _rasterCompressPdf;
     public bool OcrGrayscale { get; set; }
@@ -242,7 +242,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             else
             {
                 WorkRow.Height = _wideWorkLength; ResultsRow.Height = _wideResultsLength;
-                ResultsRow.MinHeight = 185;
+                ResultsRow.MinHeight = 230;
                 SettingsStackRow.Height = new GridLength(0); NarrowGapRow.Height = new GridLength(0);
                 SettingsColumn.MinWidth = 270; SettingsColumn.MaxWidth = 420; SettingsColumn.Width = new GridLength(_savedSettingsWidth);
                 SettingsSplitterColumn.Width = new GridLength(8);
@@ -254,7 +254,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             }
             _isNarrowLayout = narrow;
         }
-        MainLayout.MinHeight = narrow ? 1000 : 650;
+        MainLayout.MinHeight = narrow ? 1000 : 610;
         MainLayout.Width = Math.Max(560, viewportWidth);
         MainLayout.Height = Math.Max(MainLayout.MinHeight, viewportHeight);
     }

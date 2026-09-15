@@ -4,6 +4,8 @@ using System.Windows.Controls.Primitives;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using FormatToolbox.App;
+using FormatToolbox.Core;
+using FormatToolbox.Infrastructure;
 using Xunit;
 
 namespace FormatToolbox.Tests;
@@ -32,6 +34,7 @@ public sealed class MainLayoutTests
                     var scroll = (ScrollViewer)window.FindName("MainContentScroll")!;
                     var input = (ListView)window.FindName("InputList")!;
                     var history = (ListView)window.FindName("HistoryList")!;
+                    var historyActions = (StackPanel)window.FindName("HistoryActions")!;
                     var results = (TabControl)window.FindName("ResultsTabs")!;
                     var pathColumn = ((GridView)input.View).Columns[2];
                     Assert.Equal(4, more.ContextMenu!.Items.Count);
@@ -49,6 +52,40 @@ public sealed class MainLayoutTests
                     Assert.Equal(Visibility.Visible, vertical.Visibility);
                     Assert.InRange(settings.ActualWidth, 270, 420);
                     Assert.True(file.ActualWidth >= 520);
+                    results.SelectedIndex = 1;
+                    Arrange(root, 1140, 700);
+                    Assert.Equal(4, historyActions.Children.Count);
+                    Assert.True(history.TranslatePoint(new Point(history.ActualWidth, 0), results).X <=
+                        historyActions.TranslatePoint(new Point(0, 0), results).X);
+                    var previousButtonTop = double.NegativeInfinity;
+                    foreach (Button button in historyActions.Children)
+                    {
+                        Assert.True(button.ActualHeight >= 33);
+                        var buttonTop = button.TranslatePoint(new Point(0, 0), root).Y;
+                        Assert.True(buttonTop > previousButtonTop);
+                        Assert.True(button.TranslatePoint(new Point(0, button.ActualHeight), root).Y < root.ActualHeight - 30);
+                        previousButtonTop = buttonTop;
+                    }
+                    var defaultPreviewPath = Environment.GetEnvironmentVariable("FORMATTOOLBOX_THEME_PREVIEWS");
+                    if (!string.IsNullOrWhiteSpace(defaultPreviewPath))
+                    {
+                        Directory.CreateDirectory(defaultPreviewPath);
+                        var preview = new RenderTargetBitmap(1140, 700, 96, 96, PixelFormats.Pbgra32);
+                        var background = new DrawingVisual();
+                        using (var drawing = background.RenderOpen()) drawing.DrawRectangle(window.Background, null, new Rect(0, 0, 1140, 700));
+                        preview.Render(background);
+                        preview.Render(root);
+                        var encoder = new PngBitmapEncoder();
+                        encoder.Frames.Add(BitmapFrame.Create(preview));
+                        using var stream = File.Create(Path.Combine(defaultPreviewPath, "MainWindow-history-default-100.png"));
+                        encoder.Save(stream);
+                    }
+                    window.HistoryItems.Add(new HistoryRow(new HistoryEntry(DateTimeOffset.Now, "example.pdf", "png", ConversionStatus.Succeeded, null)));
+                    Arrange(root, 1140, 700);
+                    Assert.True(FindChild<ScrollViewer>(history)!.ScrollableWidth > 0);
+                    window.HistoryItems.Clear();
+                    results.SelectedIndex = 0;
+                    Arrange(root, 1140, 780);
                     var widePathWidth = pathColumn.Width;
                     Assert.True(file.TranslatePoint(new Point(), layout).X < settings.TranslatePoint(new Point(), layout).X);
                     var settingsWidth = settings.ActualWidth;
@@ -72,16 +109,15 @@ public sealed class MainLayoutTests
                     Assert.True(results.ActualHeight > afterSmallVerticalDrag + 45, $"Results height after repeated drag: {afterSmallVerticalDrag} -> {results.ActualHeight}");
                     Drag(horizontal, 0, -500);
                     root.UpdateLayout();
-                    Assert.InRange(((Grid)window.FindName("MainLayout")!).RowDefinitions[1].ActualHeight, 330, 335);
+                    Assert.InRange(((Grid)window.FindName("MainLayout")!).RowDefinitions[1].ActualHeight, 315, 320);
                     Drag(horizontal, 0, 20);
                     root.UpdateLayout();
                     var adjustedSettingsWidth = settings.ActualWidth;
                     var adjustedResultsHeight = results.ActualHeight;
                     results.SelectedIndex = 1;
                     Arrange(root, 1140, 780);
-                    var historyToolbar = (WrapPanel)((Grid)((TabItem)results.Items[1]).Content).Children[0];
-                    Assert.Equal(4, historyToolbar.Children.Count);
-                    foreach (Button button in historyToolbar.Children)
+                    Assert.Equal(4, historyActions.Children.Count);
+                    foreach (Button button in historyActions.Children)
                     {
                         Assert.True(button.ActualHeight >= 33);
                         Assert.InRange(button.TranslatePoint(new Point(button.ActualWidth, 0), results).X, 0, results.ActualWidth);
@@ -98,7 +134,7 @@ public sealed class MainLayoutTests
                     window.SelectedTarget = "jpg";
                     Assert.False(advanced.IsExpanded);
                     Assert.Equal("81", window.ImageQuality);
-                    foreach (Button button in historyToolbar.Children)
+                    foreach (Button button in historyActions.Children)
                         Assert.InRange(button.TranslatePoint(new Point(button.ActualWidth, 0), results).X, 0, results.ActualWidth);
                     Assert.Equal("1,3-5", window.PdfPageRange);
 
@@ -200,5 +236,17 @@ public sealed class MainLayoutTests
         }
         splitter.RaiseEvent(new DragCompletedEventArgs(horizontal * count, vertical * count, false) { RoutedEvent = Thumb.DragCompletedEvent });
         root.UpdateLayout();
+    }
+
+    private static T? FindChild<T>(DependencyObject parent) where T : DependencyObject
+    {
+        for (var i = 0; i < VisualTreeHelper.GetChildrenCount(parent); i++)
+        {
+            var child = VisualTreeHelper.GetChild(parent, i);
+            if (child is T match) return match;
+            var nested = FindChild<T>(child);
+            if (nested is not null) return nested;
+        }
+        return null;
     }
 }
